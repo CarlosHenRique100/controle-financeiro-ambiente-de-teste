@@ -312,6 +312,23 @@ body{background:var(--bg);color:var(--text)}
  #mainApp button,#mainApp .calendario-dia{transition:background-color .15s,border-color .15s,color .15s}
 }
 
+
+#mainApp .card{position:relative}
+.ordenar-cartao{display:flex;align-items:center;gap:5px;margin-top:10px}
+.ordenar-cartao button{min-width:40px;min-height:36px;padding:5px 9px;font-size:15px}
+.ordenar-cartao .alca{cursor:grab;color:var(--muted);font-size:13px;padding:7px}
+.card.arrastando{opacity:.55}
+#mainApp .planejados{margin:0 0 18px}
+.planejados .panel-head{border-bottom:1px solid var(--line);padding:16px 20px}
+.lista-planejados{list-style:none;margin:0;padding:0 20px}
+.plano-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line)}
+.plano-item:last-child{border-bottom:0}
+.plano-info{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.plano-detalhe,.plano-nota{color:var(--muted);font-size:13px;line-height:1.4}
+.plano-nota{padding:0 20px 14px;margin:0}
+.plano-acoes{display:flex;align-items:center;gap:8px}
+@media(max-width:520px){.plano-item{align-items:flex-start}.plano-acoes{flex-direction:column;align-items:flex-end}}
+
 </style>
 </head>
 <body>
@@ -331,12 +348,17 @@ body{background:var(--bg);color:var(--text)}
       <button class="btn-primary" id="addBtn">＋ Adicionar lançamento</button>
     </div>
   </div>
-  <div class="cards">
+  <div class="cards" id="cartoesResumo">
     <div class="card"><div class="label">Receitas</div><div class="value income" id="income">R$ 0,00</div><div class="trend" id="incomeTrend">Entradas do mês</div></div>
     <div class="card"><div class="label">Gastos</div><div class="value expense" id="expenses">R$ 0,00</div><div class="trend" id="expenseTrend">Saídas do mês</div></div>
     <div class="card"><div class="label">Contas pagas</div><div class="value" id="paid">R$ 0,00</div><div class="trend" id="paidTrend">Despesas quitadas</div></div>
     <div class="card"><div class="label">Saldo projetado do mês</div><div class="value balance" id="balance">R$ 0,00</div><div class="trend" id="balanceTrend">Inclui receitas e despesas futuras e pendentes.</div></div>
   </div>
+  <section class="panel planejados" aria-labelledby="planejadosTitulo">
+    <div class="panel-head"><h2 id="planejadosTitulo">Gastos planejados</h2></div>
+    <ul class="lista-planejados" id="listaPlanejados"></ul>
+    <p class="plano-nota">Simulações individuais do mês selecionado. Não são lançamentos e não alteram o saldo.</p>
+  </section>
   <section class="panel">
     <div class="panel-head"><h2>Lançamentos de <span id="monthTitle"></span></h2><div class="filter"><input id="search" aria-label="Buscar lançamentos" placeholder="Buscar..." /><select id="typeFilter" aria-label="Filtrar por tipo"><option value="">Todos os tipos</option><option>Receita</option><option>Despesa</option><option>Lazer</option><option>Cartão de Crédito</option></select><select id="statusFilter" aria-label="Filtrar por situação"><option value="">Todas as situações</option><option value="pendentes">Pendentes</option><option value="pagas">Pagas</option></select><button class="btn-light" id="replicate">Replicar recorrentes</button></div></div>
     <div class="table-wrap"><table><thead><tr><th>Item/Descrição</th><th>Tipo</th><th class="right">Valor</th><th>Data</th><th>Despesa paga</th><th>Observações</th><th>Ações</th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -356,7 +378,7 @@ body{background:var(--bg);color:var(--text)}
 <div class="field"><label for="status">Status</label><select id="status"><option value="NAO_PAGO">Não pago</option><option value="PAGO">Pago</option><option value="NA">Não se aplica</option></select></div>
 <div class="field"><label for="recurring">Recorrência</label><select id="recurring"><option value="false">Não repetir</option><option value="true">Repetir todos os meses</option></select></div>
 <div class="field full"><label for="notes">Observações</label><input id="notes"></div>
-</div><p id="planejamentoNota" class="nota-planejamento" hidden>Esta é apenas uma simulação: nenhum lançamento será salvo. O saldo considera o mês inteiro, não apenas o dinheiro disponível na data escolhida.</p><div id="simuladorResultado" class="simulador-resultado" role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn-light" id="cancel">Cancelar</button><button class="btn-primary" id="salvarOuSimular">Salvar lançamento</button></div></form></div></div>
+</div><p id="planejamentoNota" class="nota-planejamento" hidden>Verifique o saldo e, se desejar, salve o planejamento em uma lista separada. Ele não altera o saldo. O cálculo considera o mês inteiro, não apenas a data escolhida.</p><div id="simuladorResultado" class="simulador-resultado" role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn-light" id="cancel">Cancelar</button><button type="button" class="btn-light" id="salvarPlano" hidden>Salvar planejamento</button><button class="btn-primary" id="salvarOuSimular">Salvar lançamento</button></div></form></div></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
@@ -371,7 +393,7 @@ iniciarVencimentos();
 import { iniciarListaMobile } from "./lista_mobile.js";
 iniciarListaMobile();
 const app=initializeApp(firebaseConfig), auth=getAuth(app), db=getFirestore(app);
-let ultimaSimulacao=null;
+let ultimaSimulacao=null, planos=[];
 let data=[], current=new Date(new Date().getFullYear(),new Date().getMonth(),1), editId=null, categoryChart=null, monthlyChart=null, user=null, unsubscribe=null, ready=false;
 const byId=id=>document.getElementById(id);
 const brl=n=>n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}), pad=n=>String(n).padStart(2,'0');
@@ -405,6 +427,7 @@ paidTrend.insertAdjacentHTML(
  balanceTrend.textContent='Inclui receitas e despesas futuras e pendentes.';
  balanceEl.classList.toggle('saldo-negativo',income<exp);
  atualizarSimulacao();
+ renderPlanejados();
  iniciarCalendario({ data, current, brl, escapeHtml });
  if(typeof Chart !== 'undefined') updateCharts(mk);
 }
@@ -427,7 +450,7 @@ function atualizarSimulacao(){
  const resumo=document.createElement('span');
  resumo.textContent=`${ultimaSimulacao.descricao}: ${brl(ultimaSimulacao.valor/100)} · Saldo projetado: ${brl(centavos/100)} · Após o gasto: ${brl(restante/100)}.`;
  const nota=document.createElement('span');
- nota.textContent='Simulação não salva. Inclui receitas e despesas do mês, inclusive futuras e pendentes; confirme a disponibilidade na data do pagamento.';
+ nota.textContent='Simulação individual. Inclui receitas e despesas do mês, inclusive futuras e pendentes; confirme a disponibilidade na data do pagamento.';
  box.append(titulo,resumo,nota);
 }
 
@@ -505,6 +528,7 @@ function ajustarModoPlanejamento(){
  status.disabled=simular;recurring.disabled=simular;
  status.closest('.field').hidden=simular;recurring.closest('.field').hidden=simular;notes.closest('.field').hidden=simular;
  byId('planejamentoNota').hidden=!simular;
+ byId('salvarPlano').hidden=!simular;
  ultimaSimulacao=null;atualizarSimulacao();
 }
 type.addEventListener('change',ajustarModoPlanejamento);
@@ -517,16 +541,77 @@ form.onsubmit=async e=>{e.preventDefault();
    atualizarSimulacao();return;
  }
  if(!canWrite())return;const d={id:editId||crypto.randomUUID(),desc:desc.value.trim(),type:type.value,value:+value.value,date:date.value,status:type.value==='Receita'?'NA':status.value,recurring:recurring.value==='true',notes:notes.value,month:date.value.slice(0,7)};if(!d.desc){alert('Informe a descrição.');return}const submit=form.querySelector('[type=submit],button:not([type])');submit.disabled=true;try{if(editId){const {id,...fields}=d;await updateDoc(record(d.id),fields)}else{await setDoc(record(d.id),d)}fecharModal()}catch(e){showError(e)}finally{submit.disabled=false}};
+
+function renderPlanejados(){
+ const lista=byId('listaPlanejados'), mes=monthKey(current);
+ const itens=planos.filter(x=>x.month===mes).sort((a,b)=>a.date.localeCompare(b.date));
+ lista.replaceChildren();
+ if(!itens.length){
+  const vazio=document.createElement('li');vazio.className='empty';vazio.textContent='Nenhum gasto planejado neste mês.';lista.append(vazio);return;
+ }
+ const saldo=data.filter(x=>x.month===mes).reduce((acc,x)=>acc+(x.type==='Receita'?1:-1)*Math.round((Number(x.value)||0)*100),0);
+ itens.forEach(x=>{
+  const linha=document.createElement('li');linha.className='plano-item';
+  const info=document.createElement('div');info.className='plano-info';
+  const nome=document.createElement('strong');nome.textContent=x.desc;
+  const detalhes=document.createElement('span');detalhes.className='plano-detalhe';
+  const apos=saldo-Math.round((Number(x.value)||0)*100);
+  detalhes.textContent=`${fmtDate(x.date)} · ${apos>=0?'Saldo suficiente':'Saldo insuficiente'} · Após este gasto: ${brl(apos/100)}`;
+  info.append(nome,detalhes);
+  const acoes=document.createElement('div');acoes.className='plano-acoes';
+  const valor=document.createElement('strong');valor.textContent=brl(Number(x.value)||0);
+  const excluir=document.createElement('button');excluir.type='button';excluir.className='btn-danger';excluir.textContent='Excluir';excluir.setAttribute('aria-label','Excluir planejamento '+x.desc);
+  excluir.addEventListener('click',async()=>{if(!canWrite()||!confirm('Excluir este gasto planejado?'))return;excluir.disabled=true;try{await deleteDoc(record(x.id))}catch(e){showError(e);excluir.disabled=false}});
+  acoes.append(valor,excluir);linha.append(info,acoes);lista.append(linha);
+ });
+}
+byId('salvarPlano').addEventListener('click',async()=>{
+ const numero=Number(value.value);
+ if(!desc.value.trim()||!Number.isFinite(numero)||numero<=0||numero>1e10||!date.value||!date.checkValidity()){alert('Informe descrição, data e valor válido maior que zero.');return}
+ if(!canWrite())return;
+ const botao=byId('salvarPlano');botao.disabled=true;
+ const item={id:crypto.randomUUID(),desc:desc.value.trim(),type:'Planejar um gasto',value:numero,date:date.value,status:'NA',recurring:false,notes:'',month:date.value.slice(0,7)};
+ try{await setDoc(record(item.id),item);fecharModal()}catch(e){showError(e)}finally{botao.disabled=false}
+});
+
+// Ordenação local, independente da conta e do Firebase.
+(function iniciarOrdenacaoCartoes(){
+ const container=byId('cartoesResumo');
+ const cartoes=Array.from(container.children);
+ const ids=['receitas','gastos','pagas','saldo'];
+ const chave='ordem_cartoes_resumo_v1';
+ cartoes.forEach((cartao,i)=>{
+  cartao.dataset.cartao=ids[i];cartao.draggable=true;
+  const controles=document.createElement('div');controles.className='ordenar-cartao';
+  const alca=document.createElement('span');alca.className='alca';alca.textContent='↕ Mover';alca.title='Arraste para trocar de posição';
+  const nome=cartao.querySelector('.label').textContent;
+  const anterior=document.createElement('button');anterior.type='button';anterior.className='btn-light';anterior.textContent='←';anterior.setAttribute('aria-label','Mover '+nome+' para posição anterior');
+  const proximo=document.createElement('button');proximo.type='button';proximo.className='btn-light';proximo.textContent='→';proximo.setAttribute('aria-label','Mover '+nome+' para próxima posição');
+  anterior.addEventListener('click',()=>mover(cartao,-1));proximo.addEventListener('click',()=>mover(cartao,1));
+  controles.append(alca,anterior,proximo);cartao.append(controles);
+ });
+ function salvar(){try{localStorage.setItem(chave,JSON.stringify(Array.from(container.children,c=>c.dataset.cartao)))}catch(e){console.warn('Não foi possível salvar a ordem neste navegador.',e)}}
+ function controles(){const lista=Array.from(container.children);lista.forEach((c,i)=>{const b=c.querySelectorAll('.ordenar-cartao button');b[0].disabled=i===0;b[1].disabled=i===lista.length-1})}
+ function mover(cartao,direcao){const lista=Array.from(container.children),i=lista.indexOf(cartao),j=i+direcao;if(j<0||j>=lista.length)return;container.insertBefore(cartao,direcao<0?lista[j]:lista[j].nextSibling);salvar();controles()}
+ try{const ordem=JSON.parse(localStorage.getItem(chave));if(Array.isArray(ordem)&&ordem.length===ids.length&&new Set(ordem).size===ids.length&&ordem.every(id=>ids.includes(id)))ordem.forEach(id=>container.append(cartoes[ids.indexOf(id)]))}catch(e){}
+ let origem=null;
+ container.addEventListener('dragstart',e=>{const c=e.target.closest('.card');if(!c)return;origem=c;c.classList.add('arrastando');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',c.dataset.cartao)});
+ container.addEventListener('dragover',e=>{if(origem&&e.target.closest('.card'))e.preventDefault()});
+ container.addEventListener('drop',e=>{const alvo=e.target.closest('.card');if(!origem||!alvo||alvo===origem)return;e.preventDefault();const marcador=document.createComment('posição');container.replaceChild(marcador,origem);container.replaceChild(origem,alvo);container.replaceChild(alvo,marcador);salvar();controles()});
+ container.addEventListener('dragend',()=>{if(origem)origem.classList.remove('arrastando');origem=null});
+ controles();
+})();
+
 prev.onclick=()=>{current.setMonth(current.getMonth()-1);render()};next.onclick=()=>{current.setMonth(current.getMonth()+1);render()};search.oninput=render;typeFilter.onchange=render;document.getElementById('statusFilter').onchange=render;
 replicate.onclick=async()=>{if(!canWrite())return;const target=monthKey(current), prevD=new Date(current);prevD.setMonth(prevD.getMonth()-1);const source=monthKey(prevD), existing=new Set(data.filter(x=>x.month===target).map(x=>x.desc+'|'+x.value));const copies=[];data.filter(x=>x.month===source&&x.recurring).forEach(x=>{const k=x.desc+'|'+x.value;if(!existing.has(k)){const day=Math.min(Number(x.date.slice(8,10)),new Date(current.getFullYear(),current.getMonth()+1,0).getDate());copies.push({...x,id:crypto.randomUUID(),date:`${target}-${pad(day)}`,month:target,status:x.type==='Receita'?'NA':'NAO_PAGO'});existing.add(k)}});if(!copies.length){alert('Nenhum lançamento novo para replicar.');return}if(copies.length>450){alert('Há lançamentos demais para replicar de uma vez.');return}replicate.disabled=true;try{const batch=writeBatch(db);copies.forEach(x=>batch.set(record(x.id),x));await batch.commit();alert(`${copies.length} lançamento(s) recorrente(s) replicado(s).`)}catch(e){showError(e)}finally{replicate.disabled=false}};
 byId('loginForm').onsubmit=async e=>{e.preventDefault();byId('loginBtn').disabled=true;byId('authMessage').textContent='Entrando...';try{await signInWithEmailAndPassword(auth,byId('email').value,byId('password').value);byId('password').value='';byId('authMessage').textContent=''}catch(err){console.error(err);byId('authMessage').textContent='Não foi possível entrar. Confira o e-mail, a senha e a configuração do Firebase.'}finally{byId('loginBtn').disabled=false}};
 byId('logoutBtn').onclick=async()=>{if(!confirm('Sair da conta neste dispositivo?'))return;try{await signOut(auth)}catch(e){showError(e)}};
-onAuthStateChanged(auth,u=>{if(unsubscribe){unsubscribe();unsubscribe=null}ready=false;data=[];user=u;modal.classList.remove('show');byId('authPanel').hidden=!!u;byId('mainApp').hidden=!u;if(!u){ultimaSimulacao=null;byId('simuladorResultado').hidden=true;return;}byId('userEmail').textContent=u.email||'Conta conectada';setStatus('Carregando lançamentos...');render();unsubscribe=onSnapshot(records(),{includeMetadataChanges:true},snap=>{data=snap.docs.map(d=>({...d.data(),id:d.id}));ready=!snap.metadata.fromCache;const pending=snap.metadata.hasPendingWrites;setStatus(pending?'Salvando alterações...':snap.metadata.fromCache?'Sem conexão: exibindo dados temporários. Não feche a página se houver alterações pendentes.':'Sincronizado',snap.metadata.fromCache);render()},e=>{ready=false;showError(e)})});
+onAuthStateChanged(auth,u=>{if(unsubscribe){unsubscribe();unsubscribe=null}ready=false;data=[];planos=[];user=u;modal.classList.remove('show');byId('authPanel').hidden=!!u;byId('mainApp').hidden=!u;if(!u){ultimaSimulacao=null;byId('simuladorResultado').hidden=true;return;}byId('userEmail').textContent=u.email||'Conta conectada';setStatus('Carregando lançamentos...');render();unsubscribe=onSnapshot(records(),{includeMetadataChanges:true},snap=>{const todos=snap.docs.map(d=>({...d.data(),id:d.id}));planos=todos.filter(x=>x.type==='Planejar um gasto');data=todos.filter(x=>x.type!=='Planejar um gasto');ready=!snap.metadata.fromCache;const pending=snap.metadata.hasPendingWrites;setStatus(pending?'Salvando alterações...':snap.metadata.fromCache?'Sem conexão: exibindo dados temporários. Não feche a página se houver alterações pendentes.':'Sincronizado',snap.metadata.fromCache);render()},e=>{ready=false;showError(e)})});
 window.addEventListener('offline',()=>{ready=false;setStatus('Sem conexão. Aguarde reconectar antes de alterar dados.',true);atualizarSimulacao()});
 window.addEventListener('online',()=>setStatus('Reconectando...'));
 byId('exportBtn').onclick=async()=>{if(!canWrite())return;try{const snapshot=await getDocsFromServer(records());const out=snapshot.docs.map(d=>({...d.data(),id:d.id}));const url=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='backup_financeiro.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){showError(e)}};
 byId('importBtn').onclick=()=>{if(canWrite())byId('importFile').click()};
-byId('importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const arr=JSON.parse(await file.text());if(!Array.isArray(arr)||arr.length>450)throw Error('O arquivo precisa conter uma lista com até 450 lançamentos.');const allowed=['Receita','Despesa','Lazer','Cartão de Crédito'];const cleaned=arr.map(x=>{if(!x||typeof x.desc!=='string'||!x.desc.trim()||!allowed.includes(x.type)||!Number.isFinite(Number(x.value))||Number(x.value)<0||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)||!['PAGO','NAO_PAGO','NA'].includes(x.status))throw Error('Arquivo inválido: verifique os dados.');const parsed=new Date(x.date+'T12:00:00');if(!Number.isFinite(parsed.getTime())||`${parsed.getFullYear()}-${pad(parsed.getMonth()+1)}-${pad(parsed.getDate())}`!==x.date)throw Error('Arquivo contém data inválida.');return {id:crypto.randomUUID(),desc:x.desc,type:x.type,value:Number(x.value),date:x.date,status:x.status,recurring:x.recurring===true,notes:typeof x.notes==='string'?x.notes:'',month:x.date.slice(0,7)}});if(!cleaned.length){alert('Arquivo sem lançamentos.');return}if(!confirm(`Importar ${cleaned.length} lançamento(s) como novos? Eles serão adicionados aos existentes e importar duas vezes cria duplicatas.`))return;const batch=writeBatch(db);cleaned.forEach(x=>batch.set(record(x.id),x));await batch.commit();alert(`${cleaned.length} lançamento(s) importado(s).`)}catch(err){console.error(err);alert('Importação não concluída: '+(err.message||'erro de conexão'))}finally{e.target.value=''}};
+byId('importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const arr=JSON.parse(await file.text());if(!Array.isArray(arr)||arr.length>450)throw Error('O arquivo precisa conter uma lista com até 450 lançamentos.');const allowed=['Receita','Despesa','Lazer','Cartão de Crédito','Planejar um gasto'];const cleaned=arr.map(x=>{if(!x||typeof x.desc!=='string'||!x.desc.trim()||!allowed.includes(x.type)||!Number.isFinite(Number(x.value))||Number(x.value)<0||!/^\d{4}-\d{2}-\d{2}$/.test(x.date)||!['PAGO','NAO_PAGO','NA'].includes(x.status))throw Error('Arquivo inválido: verifique os dados.');const parsed=new Date(x.date+'T12:00:00');if(!Number.isFinite(parsed.getTime())||`${parsed.getFullYear()}-${pad(parsed.getMonth()+1)}-${pad(parsed.getDate())}`!==x.date)throw Error('Arquivo contém data inválida.');return {id:crypto.randomUUID(),desc:x.desc,type:x.type,value:Number(x.value),date:x.date,status:x.status,recurring:x.recurring===true,notes:typeof x.notes==='string'?x.notes:'',month:x.date.slice(0,7)}});if(!cleaned.length){alert('Arquivo sem lançamentos.');return}if(!confirm(`Importar ${cleaned.length} lançamento(s) como novos? Eles serão adicionados aos existentes e importar duas vezes cria duplicatas.`))return;const batch=writeBatch(db);cleaned.forEach(x=>batch.set(record(x.id),x));await batch.commit();alert(`${cleaned.length} lançamento(s) importado(s).`)}catch(err){console.error(err);alert('Importação não concluída: '+(err.message||'erro de conexão'))}finally{e.target.value=''}};
 </script>
 <script src="./tema.js" defer></script>
 </body></html>
