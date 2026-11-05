@@ -339,6 +339,20 @@ body{background:var(--bg);color:var(--text)}
 #secoesOrdenaveis .planejados,#secoesOrdenaveis #calendarioContas,#secoesOrdenaveis .analytics{margin-bottom:0}
 .secao-anuncio{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
+
+/* Orientação e estados de interação do calendário */
+#mainApp #calendarioContas .calendario-ajuda{margin:6px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+#mainApp #calendarioContas .calendario-dia{min-height:76px;cursor:pointer}
+#mainApp #calendarioContas .calendario-dia:focus-visible,
+#mainApp .plano-acoes button:focus-visible{outline:3px solid #3c9b72;outline-offset:2px}
+#mainApp #calendarioContas .calendario-dia.selecionado{outline:2px solid #397b5c;outline-offset:-2px}
+#mainApp .plano-acoes button{min-height:44px}
+@media(max-width:520px){
+ #mainApp #calendarioContas .calendario-dia{min-height:52px}
+ #mainApp .plano-acoes{align-items:stretch}
+}
+@media(prefers-reduced-motion:reduce){#mainApp #calendarioContas .calendario-dia{transition:none}}
+
 </style>
 </head>
 <body>
@@ -367,7 +381,7 @@ body{background:var(--bg);color:var(--text)}
   <section class="panel planejados" aria-labelledby="planejadosTitulo">
     <div class="panel-head"><h2 id="planejadosTitulo">Gastos planejados</h2></div>
     <ul class="lista-planejados" id="listaPlanejados"></ul>
-    <p class="plano-nota">Simulações individuais do mês selecionado. Não são lançamentos e não alteram o saldo.</p>
+    <p class="plano-nota">A verificação é individual e considera o mês inteiro, inclusive receitas e despesas futuras ou pendentes. Não soma os outros planejamentos nem garante saldo na data escolhida.</p>
   </section>
   <section class="panel">
     <div class="panel-head"><h2>Lançamentos de <span id="monthTitle"></span></h2><div class="filter"><input id="search" aria-label="Buscar lançamentos" placeholder="Buscar..." /><select id="typeFilter" aria-label="Filtrar por tipo"><option value="">Todos os tipos</option><option>Receita</option><option>Despesa</option><option>Lazer</option><option>Cartão de Crédito</option></select><select id="statusFilter" aria-label="Filtrar por situação"><option value="">Todas as situações</option><option value="pendentes">Pendentes</option><option value="pagas">Pagas</option></select><button class="btn-light" id="replicate">Replicar recorrentes</button></div></div>
@@ -388,7 +402,7 @@ body{background:var(--bg);color:var(--text)}
 <div class="field"><label for="status">Status</label><select id="status"><option value="NAO_PAGO">Não pago</option><option value="PAGO">Pago</option><option value="NA">Não se aplica</option></select></div>
 <div class="field"><label for="recurring">Recorrência</label><select id="recurring"><option value="false">Não repetir</option><option value="true">Repetir todos os meses</option></select></div>
 <div class="field full"><label for="notes">Observações</label><input id="notes"></div>
-</div><p id="planejamentoNota" class="nota-planejamento" hidden>Verifique o saldo e, se desejar, salve o planejamento em uma lista separada. Ele não altera o saldo. O cálculo considera o mês inteiro, não apenas a data escolhida.</p><div id="simuladorResultado" class="simulador-resultado" role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn-light" id="cancel">Cancelar</button><button type="button" class="btn-light" id="salvarPlano" hidden>Salvar planejamento</button><button class="btn-primary" id="salvarOuSimular">Salvar lançamento</button></div></form></div></div>
+</div><p id="planejamentoNota" class="nota-planejamento" hidden>Salve o planejamento para consultar a verificação de saldo em Gastos planejados. Ele não altera o saldo.</p><div id="simuladorResultado" class="simulador-resultado" role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn-light" id="cancel">Cancelar</button><button type="button" class="btn-light" id="salvarPlano" hidden>Salvar planejamento</button><button class="btn-primary" id="salvarOuSimular">Salvar lançamento</button></div></form></div></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
@@ -404,6 +418,7 @@ import { iniciarListaMobile } from "./lista_mobile.js";
 iniciarListaMobile();
 const app=initializeApp(firebaseConfig), auth=getAuth(app), db=getFirestore(app);
 let ultimaSimulacao=null, planos=[];
+const planosVerificados = new Set();
 let data=[], current=new Date(new Date().getFullYear(),new Date().getMonth(),1), editId=null, categoryChart=null, monthlyChart=null, user=null, unsubscribe=null, ready=false;
 const byId=id=>document.getElementById(id);
 const brl=n=>n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}), pad=n=>String(n).padStart(2,'0');
@@ -439,6 +454,13 @@ paidTrend.insertAdjacentHTML(
  atualizarSimulacao();
  renderPlanejados();
  iniciarCalendario({ data, current, brl, escapeHtml });
+ const cabecalhoCalendario=byId('calendarioContas')?.querySelector('.calendario-cabecalho');
+ if(cabecalhoCalendario && !cabecalhoCalendario.querySelector('.calendario-ajuda')){
+  const ajuda=document.createElement('p');
+  ajuda.className='calendario-ajuda';
+  ajuda.textContent='Selecione um dia para consultar seus lançamentos. O dia de hoje e o dia selecionado ficam destacados.';
+  cabecalhoCalendario.append(ajuda);
+ }
  iniciarOrdenacaoSecoes();
  if(typeof Chart !== 'undefined') updateCharts(mk);
 }
@@ -535,7 +557,8 @@ addBtn.onclick=()=>openModal();cancel.onclick=fecharModal;
 modal.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();fecharModal()}});
 function ajustarModoPlanejamento(){
  const simular=type.value==='Planejar um gasto';
- byId('salvarOuSimular').textContent=simular?'Verificar saldo':'Salvar lançamento';
+ byId('salvarOuSimular').hidden=simular;
+ byId('salvarOuSimular').textContent='Salvar lançamento';
  status.disabled=simular;recurring.disabled=simular;
  status.closest('.field').hidden=simular;recurring.closest('.field').hidden=simular;notes.closest('.field').hidden=simular;
  byId('planejamentoNota').hidden=!simular;
@@ -546,10 +569,7 @@ type.addEventListener('change',ajustarModoPlanejamento);
 [desc,value,date].forEach(el=>el.addEventListener('input',()=>{ultimaSimulacao=null;atualizarSimulacao()}));
 form.onsubmit=async e=>{e.preventDefault();
  if(type.value==='Planejar um gasto'){
-   const numero=Number(value.value);
-   if(!desc.value.trim() || !Number.isFinite(numero) || numero<=0 || numero>1e10 || !date.value){alert('Informe descrição, data e valor válido maior que zero.');return}
-   ultimaSimulacao={descricao:desc.value.trim(),valor:Math.round(numero*100),mes:date.value.slice(0,7)};
-   atualizarSimulacao();return;
+   byId('salvarPlano').click();return;
  }
  if(!canWrite())return;const d={id:editId||crypto.randomUUID(),desc:desc.value.trim(),type:type.value,value:+value.value,date:date.value,status:type.value==='Receita'?'NA':status.value,recurring:recurring.value==='true',notes:notes.value,month:date.value.slice(0,7)};if(!d.desc){alert('Informe a descrição.');return}const submit=form.querySelector('[type=submit],button:not([type])');submit.disabled=true;try{if(editId){const {id,...fields}=d;await updateDoc(record(d.id),fields)}else{await setDoc(record(d.id),d)}fecharModal()}catch(e){showError(e)}finally{submit.disabled=false}};
 
@@ -567,13 +587,22 @@ function renderPlanejados(){
   const nome=document.createElement('strong');nome.textContent=x.desc;
   const detalhes=document.createElement('span');detalhes.className='plano-detalhe';
   const apos=saldo-Math.round((Number(x.value)||0)*100);
-  detalhes.textContent=`${fmtDate(x.date)} · ${apos>=0?'Saldo suficiente':'Saldo insuficiente'} · Após este gasto: ${brl(apos/100)}`;
+  detalhes.setAttribute('aria-live','polite');
+  const mostrarResultado=()=>{
+   detalhes.textContent=!planosVerificados.has(x.id) ? `${fmtDate(x.date)} · Use Verificar saldo para consultar a simulação.` :
+    (!ready || !navigator.onLine) ? `${fmtDate(x.date)} · Saldo indisponível: aguarde a conexão e a atualização dos dados.` :
+    `${fmtDate(x.date)} · ${apos>=0?'Saldo projetado suficiente':'Saldo projetado insuficiente'} · Após este gasto: ${brl(apos/100)}`;
+  };
+  mostrarResultado();
   info.append(nome,detalhes);
   const acoes=document.createElement('div');acoes.className='plano-acoes';
   const valor=document.createElement('strong');valor.textContent=brl(Number(x.value)||0);
+  const verificar=document.createElement('button');verificar.type='button';verificar.className='btn-light';
+  verificar.textContent='Verificar saldo';verificar.setAttribute('aria-label','Verificar saldo para '+x.desc);
+  verificar.addEventListener('click',()=>{planosVerificados.add(x.id);mostrarResultado()});
   const excluir=document.createElement('button');excluir.type='button';excluir.className='btn-danger';excluir.textContent='Excluir';excluir.setAttribute('aria-label','Excluir planejamento '+x.desc);
   excluir.addEventListener('click',async()=>{if(!canWrite()||!confirm('Excluir este gasto planejado?'))return;excluir.disabled=true;try{await deleteDoc(record(x.id))}catch(e){showError(e);excluir.disabled=false}});
-  acoes.append(valor,excluir);linha.append(info,acoes);lista.append(linha);
+  acoes.append(valor,verificar,excluir);linha.append(info,acoes);lista.append(linha);
  });
 }
 byId('salvarPlano').addEventListener('click',async()=>{
@@ -653,8 +682,8 @@ prev.onclick=()=>{current.setMonth(current.getMonth()-1);render()};next.onclick=
 replicate.onclick=async()=>{if(!canWrite())return;const target=monthKey(current), prevD=new Date(current);prevD.setMonth(prevD.getMonth()-1);const source=monthKey(prevD), existing=new Set(data.filter(x=>x.month===target).map(x=>x.desc+'|'+x.value));const copies=[];data.filter(x=>x.month===source&&x.recurring).forEach(x=>{const k=x.desc+'|'+x.value;if(!existing.has(k)){const day=Math.min(Number(x.date.slice(8,10)),new Date(current.getFullYear(),current.getMonth()+1,0).getDate());copies.push({...x,id:crypto.randomUUID(),date:`${target}-${pad(day)}`,month:target,status:x.type==='Receita'?'NA':'NAO_PAGO'});existing.add(k)}});if(!copies.length){alert('Nenhum lançamento novo para replicar.');return}if(copies.length>450){alert('Há lançamentos demais para replicar de uma vez.');return}replicate.disabled=true;try{const batch=writeBatch(db);copies.forEach(x=>batch.set(record(x.id),x));await batch.commit();alert(`${copies.length} lançamento(s) recorrente(s) replicado(s).`)}catch(e){showError(e)}finally{replicate.disabled=false}};
 byId('loginForm').onsubmit=async e=>{e.preventDefault();byId('loginBtn').disabled=true;byId('authMessage').textContent='Entrando...';try{await signInWithEmailAndPassword(auth,byId('email').value,byId('password').value);byId('password').value='';byId('authMessage').textContent=''}catch(err){console.error(err);byId('authMessage').textContent='Não foi possível entrar. Confira o e-mail, a senha e a configuração do Firebase.'}finally{byId('loginBtn').disabled=false}};
 byId('logoutBtn').onclick=async()=>{if(!confirm('Sair da conta neste dispositivo?'))return;try{await signOut(auth)}catch(e){showError(e)}};
-onAuthStateChanged(auth,u=>{if(unsubscribe){unsubscribe();unsubscribe=null}ready=false;data=[];planos=[];user=u;modal.classList.remove('show');byId('authPanel').hidden=!!u;byId('mainApp').hidden=!u;if(!u){ultimaSimulacao=null;byId('simuladorResultado').hidden=true;return;}byId('userEmail').textContent=u.email||'Conta conectada';setStatus('Carregando lançamentos...');render();unsubscribe=onSnapshot(records(),{includeMetadataChanges:true},snap=>{const todos=snap.docs.map(d=>({...d.data(),id:d.id}));planos=todos.filter(x=>x.type==='Planejar um gasto');data=todos.filter(x=>x.type!=='Planejar um gasto');ready=!snap.metadata.fromCache;const pending=snap.metadata.hasPendingWrites;setStatus(pending?'Salvando alterações...':snap.metadata.fromCache?'Sem conexão: exibindo dados temporários. Não feche a página se houver alterações pendentes.':'Sincronizado',snap.metadata.fromCache);render()},e=>{ready=false;showError(e)})});
-window.addEventListener('offline',()=>{ready=false;setStatus('Sem conexão. Aguarde reconectar antes de alterar dados.',true);atualizarSimulacao()});
+onAuthStateChanged(auth,u=>{if(unsubscribe){unsubscribe();unsubscribe=null}ready=false;data=[];planos=[];planosVerificados.clear();user=u;modal.classList.remove('show');byId('authPanel').hidden=!!u;byId('mainApp').hidden=!u;if(!u){ultimaSimulacao=null;byId('simuladorResultado').hidden=true;return;}byId('userEmail').textContent=u.email||'Conta conectada';setStatus('Carregando lançamentos...');render();unsubscribe=onSnapshot(records(),{includeMetadataChanges:true},snap=>{const todos=snap.docs.map(d=>({...d.data(),id:d.id}));planos=todos.filter(x=>x.type==='Planejar um gasto');data=todos.filter(x=>x.type!=='Planejar um gasto');ready=!snap.metadata.fromCache;const pending=snap.metadata.hasPendingWrites;setStatus(pending?'Salvando alterações...':snap.metadata.fromCache?'Sem conexão: exibindo dados temporários. Não feche a página se houver alterações pendentes.':'Sincronizado',snap.metadata.fromCache);render()},e=>{ready=false;showError(e)})});
+window.addEventListener('offline',()=>{ready=false;setStatus('Sem conexão. Aguarde reconectar antes de alterar dados.',true);atualizarSimulacao();renderPlanejados()});
 window.addEventListener('online',()=>setStatus('Reconectando...'));
 byId('exportBtn').onclick=async()=>{if(!canWrite())return;try{const snapshot=await getDocsFromServer(records());const out=snapshot.docs.map(d=>({...d.data(),id:d.id}));const url=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='backup_financeiro.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){showError(e)}};
 byId('importBtn').onclick=()=>{if(canWrite())byId('importFile').click()};
