@@ -329,6 +329,16 @@ body{background:var(--bg);color:var(--text)}
 .plano-acoes{display:flex;align-items:center;gap:8px}
 @media(max-width:520px){.plano-item{align-items:flex-start}.plano-acoes{flex-direction:column;align-items:flex-end}}
 
+
+#secoesOrdenaveis .secao-movivel{margin-bottom:18px;min-width:0}
+#secoesOrdenaveis .secao-ordenar{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:0 0 6px}
+#secoesOrdenaveis .secao-alca{margin-right:auto;padding:8px 4px;color:var(--muted);font-size:13px;font-weight:700;cursor:grab}
+#secoesOrdenaveis .secao-ordenar button{min-width:42px;min-height:42px;padding:6px 10px}
+#secoesOrdenaveis .secao-ordenar button:disabled{opacity:.4;cursor:not-allowed}
+#secoesOrdenaveis .secao-arrastando{opacity:.55}
+#secoesOrdenaveis .planejados,#secoesOrdenaveis #calendarioContas,#secoesOrdenaveis .analytics{margin-bottom:0}
+.secao-anuncio{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
 </style>
 </head>
 <body>
@@ -429,6 +439,7 @@ paidTrend.insertAdjacentHTML(
  atualizarSimulacao();
  renderPlanejados();
  iniciarCalendario({ data, current, brl, escapeHtml });
+ iniciarOrdenacaoSecoes();
  if(typeof Chart !== 'undefined') updateCharts(mk);
 }
 
@@ -574,33 +585,69 @@ byId('salvarPlano').addEventListener('click',async()=>{
  try{await setDoc(record(item.id),item);fecharModal()}catch(e){showError(e)}finally{botao.disabled=false}
 });
 
-// Ordenação local, independente da conta e do Firebase.
-(function iniciarOrdenacaoCartoes(){
- const container=byId('cartoesResumo');
- const cartoes=Array.from(container.children);
- const ids=['receitas','gastos','pagas','saldo'];
- const chave='ordem_cartoes_resumo_v1';
- cartoes.forEach((cartao,i)=>{
-  cartao.dataset.cartao=ids[i];cartao.draggable=true;
-  const controles=document.createElement('div');controles.className='ordenar-cartao';
-  const alca=document.createElement('span');alca.className='alca';alca.textContent='↕ Mover';alca.title='Arraste para trocar de posição';
-  const nome=cartao.querySelector('.label').textContent;
-  const anterior=document.createElement('button');anterior.type='button';anterior.className='btn-light';anterior.textContent='←';anterior.setAttribute('aria-label','Mover '+nome+' para posição anterior');
-  const proximo=document.createElement('button');proximo.type='button';proximo.className='btn-light';proximo.textContent='→';proximo.setAttribute('aria-label','Mover '+nome+' para próxima posição');
-  anterior.addEventListener('click',()=>mover(cartao,-1));proximo.addEventListener('click',()=>mover(cartao,1));
-  controles.append(alca,anterior,proximo);cartao.append(controles);
- });
- function salvar(){try{localStorage.setItem(chave,JSON.stringify(Array.from(container.children,c=>c.dataset.cartao)))}catch(e){console.warn('Não foi possível salvar a ordem neste navegador.',e)}}
- function controles(){const lista=Array.from(container.children);lista.forEach((c,i)=>{const b=c.querySelectorAll('.ordenar-cartao button');b[0].disabled=i===0;b[1].disabled=i===lista.length-1})}
- function mover(cartao,direcao){const lista=Array.from(container.children),i=lista.indexOf(cartao),j=i+direcao;if(j<0||j>=lista.length)return;container.insertBefore(cartao,direcao<0?lista[j]:lista[j].nextSibling);salvar();controles()}
- try{const ordem=JSON.parse(localStorage.getItem(chave));if(Array.isArray(ordem)&&ordem.length===ids.length&&new Set(ordem).size===ids.length&&ordem.every(id=>ids.includes(id)))ordem.forEach(id=>container.append(cartoes[ids.indexOf(id)]))}catch(e){}
+
+// A ordem das seções é guardada apenas neste navegador, sem alterar o Firebase.
+function iniciarOrdenacaoSecoes(){
+ if(byId('secoesOrdenaveis')) return;
+ const resumo=byId('cartoesResumo');
+ const calendario=byId('calendarioContas');
+ const planejados=document.querySelector('#mainApp .planejados');
+ const lancamentos=byId('rows')?.closest('section');
+ const graficos=byId('areaGraficos');
+ const alternar=byId('alternarGraficos');
+ if(!resumo || !calendario || !planejados || !lancamentos || !graficos || !alternar) return;
+ const area=document.createElement('div');
+ area.id='secoesOrdenaveis';
+ resumo.after(area);
+ const secoes=[
+  {id:'calendario',nome:'Calendário',nodes:[calendario]},
+  {id:'planejados',nome:'Gastos planejados',nodes:[planejados]},
+  {id:'lancamentos',nome:'Lançamentos do mês',nodes:[lancamentos]},
+  {id:'graficos',nome:'Gráficos',nodes:[alternar,graficos]}
+ ];
+ const chave='ordem_secoes_financeiras_v1';
+ const anunciar=document.createElement('span');
+ anunciar.className='secao-anuncio';
+ anunciar.setAttribute('aria-live','polite');
+ area.before(anunciar);
  let origem=null;
- container.addEventListener('dragstart',e=>{const c=e.target.closest('.card');if(!c)return;origem=c;c.classList.add('arrastando');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',c.dataset.cartao)});
- container.addEventListener('dragover',e=>{if(origem&&e.target.closest('.card'))e.preventDefault()});
- container.addEventListener('drop',e=>{const alvo=e.target.closest('.card');if(!origem||!alvo||alvo===origem)return;e.preventDefault();const marcador=document.createComment('posição');container.replaceChild(marcador,origem);container.replaceChild(origem,alvo);container.replaceChild(alvo,marcador);salvar();controles()});
- container.addEventListener('dragend',()=>{if(origem)origem.classList.remove('arrastando');origem=null});
- controles();
-})();
+ const salvar=()=>{try{localStorage.setItem(chave,JSON.stringify([...area.children].map(el=>el.dataset.secao)))}catch(e){console.warn('Não foi possível salvar a ordem das seções.',e)}};
+ const atualizar=()=>{const lista=[...area.children];lista.forEach((el,i)=>{
+  el.querySelector('[data-direcao="anterior"]').disabled=i===0;
+  el.querySelector('[data-direcao="proxima"]').disabled=i===lista.length-1;
+ })};
+ const mover=(el,direcao)=>{const lista=[...area.children],i=lista.indexOf(el),j=i+direcao;
+  if(j<0||j>=lista.length)return;
+  if(direcao<0)area.insertBefore(el,lista[j]);else area.insertBefore(el,lista[j].nextSibling);
+  salvar();atualizar();anunciar.textContent=el.dataset.nome+' movido para a posição '+(j+1)+' de '+lista.length+'.';
+ };
+ secoes.forEach(({id,nome,nodes})=>{
+  const bloco=document.createElement('section');bloco.className='secao-movivel';
+  bloco.dataset.secao=id;bloco.dataset.nome=nome;bloco.setAttribute('aria-label',nome);
+  const barra=document.createElement('div');barra.className='secao-ordenar';
+  const alca=document.createElement('span');alca.className='secao-alca';alca.draggable=true;
+  alca.textContent='↕ '+nome;alca.title='Arraste para reorganizar esta seção';
+  const anterior=document.createElement('button');anterior.type='button';anterior.className='btn-light';anterior.dataset.direcao='anterior';anterior.textContent='↑';anterior.setAttribute('aria-label','Mover '+nome+' para cima');
+  const proximo=document.createElement('button');proximo.type='button';proximo.className='btn-light';proximo.dataset.direcao='proxima';proximo.textContent='↓';proximo.setAttribute('aria-label','Mover '+nome+' para baixo');
+  anterior.addEventListener('click',()=>mover(bloco,-1));proximo.addEventListener('click',()=>mover(bloco,1));
+  alca.addEventListener('dragstart',e=>{origem=bloco;bloco.classList.add('secao-arrastando');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',id)});
+  alca.addEventListener('dragend',()=>{bloco.classList.remove('secao-arrastando');origem=null});
+  bloco.addEventListener('dragover',e=>{if(origem && origem!==bloco)e.preventDefault()});
+  bloco.addEventListener('drop',e=>{
+   if(!origem||origem===bloco)return;e.preventDefault();
+   const marcador=document.createComment('posição');
+   area.replaceChild(marcador,origem);area.replaceChild(origem,bloco);area.replaceChild(bloco,marcador);
+   salvar();atualizar();anunciar.textContent='Seções reorganizadas.';
+  });
+  barra.append(alca,anterior,proximo);bloco.append(barra,...nodes);area.append(bloco);
+ });
+ try{
+  const ordem=JSON.parse(localStorage.getItem(chave));
+  if(Array.isArray(ordem)&&ordem.length===secoes.length&&new Set(ordem).size===secoes.length&&ordem.every(id=>secoes.some(s=>s.id===id)))
+   ordem.forEach(id=>area.append([...area.children].find(el=>el.dataset.secao===id)));
+ }catch(e){console.warn('Não foi possível restaurar a ordem das seções.',e)}
+ atualizar();
+}
 
 prev.onclick=()=>{current.setMonth(current.getMonth()-1);render()};next.onclick=()=>{current.setMonth(current.getMonth()+1);render()};search.oninput=render;typeFilter.onchange=render;document.getElementById('statusFilter').onchange=render;
 replicate.onclick=async()=>{if(!canWrite())return;const target=monthKey(current), prevD=new Date(current);prevD.setMonth(prevD.getMonth()-1);const source=monthKey(prevD), existing=new Set(data.filter(x=>x.month===target).map(x=>x.desc+'|'+x.value));const copies=[];data.filter(x=>x.month===source&&x.recurring).forEach(x=>{const k=x.desc+'|'+x.value;if(!existing.has(k)){const day=Math.min(Number(x.date.slice(8,10)),new Date(current.getFullYear(),current.getMonth()+1,0).getDate());copies.push({...x,id:crypto.randomUUID(),date:`${target}-${pad(day)}`,month:target,status:x.type==='Receita'?'NA':'NAO_PAGO'});existing.add(k)}});if(!copies.length){alert('Nenhum lançamento novo para replicar.');return}if(copies.length>450){alert('Há lançamentos demais para replicar de uma vez.');return}replicate.disabled=true;try{const batch=writeBatch(db);copies.forEach(x=>batch.set(record(x.id),x));await batch.commit();alert(`${copies.length} lançamento(s) recorrente(s) replicado(s).`)}catch(e){showError(e)}finally{replicate.disabled=false}};
