@@ -413,6 +413,14 @@ body{background:var(--bg);color:var(--text)}
  #mainApp .emprestimos tbody td.emp-detalhes,#mainApp .emprestimos tbody td.empty{grid-column:1/-1}
 }
 
+
+.emp-parcela-form{flex:1 0 100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:12px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px}
+.emp-parcela-form .emp-form-info,.emp-parcela-form .emp-form-acoes,.emp-parcela-form .emp-form-erro{grid-column:1/-1}
+.emp-parcela-form .emp-form-info,.emp-parcela-form .emp-form-erro{margin:0;font-size:13px;line-height:1.45}
+.emp-parcela-form .emp-form-erro{color:#a41710;font-weight:700}
+.emp-parcela-form .field input{background:#fff;color:#263746}
+.emp-parcela-form .emp-form-acoes{display:flex;gap:8px;flex-wrap:wrap}
+.emp-parcelas .emp-parcela-texto{line-height:1.5;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -443,7 +451,7 @@ body{background:var(--bg);color:var(--text)}
     <div class="table-wrap"><table aria-label="Empréstimos a receber"><thead><tr>
       <th>Pessoa</th><th>Valor emprestado</th><th>Total a receber</th><th>Parcelas</th><th>Próximo vencimento</th><th>Juros</th><th>Ações</th>
     </tr></thead><tbody id="listaEmprestimos"></tbody></table></div>
-    <p class="plano-nota">Acompanhe os empréstimos de todos os meses. Registrar a saída é opcional; marque uma parcela como recebida e use Registrar receita para incluí-la no saldo do mês do vencimento.</p>
+    <p class="plano-nota">Acompanhe os empréstimos de todos os meses. Registrar a saída é opcional; marque uma parcela como recebida e use Registrar receita para incluí-la no saldo do mês em que foi recebida.</p>
   </section>
   <section class="panel planejados" aria-labelledby="planejadosTitulo">
     <div class="panel-head"><h2 id="planejadosTitulo">Gastos planejados</h2></div>
@@ -746,7 +754,7 @@ async function salvarEmprestimo(){
     const ref=record(id),snap=await tx.get(ref);
     if(!snap.exists())throw Error('Empréstimo não encontrado.');
     const atual=snap.data();
-    if(atual.saidaRegistrada||atual.parcelas.some(p=>p.recebida))throw Error('Não é possível editar: uma saída ou parcela recebida foi registrada.');
+    if(atual.saidaRegistrada||atual.parcelas.some(p=>p.recebida||p.historicoVencimentos?.length))throw Error('Não é possível editar: existe saída, recebimento ou alteração de vencimento registrada.');
     tx.update(ref,fields);
    });
   }else await setDoc(record(id),novo);
@@ -754,11 +762,69 @@ async function salvarEmprestimo(){
  }catch(err){showError(err)}finally{botao.disabled=false}
 }
 function editarEmprestimo(item){
- if(item.saidaRegistrada||item.parcelas.some(p=>p.recebida)){alert('Não é possível editar este empréstimo depois de registrar a saída ou receber uma parcela.');return}
+ if(item.saidaRegistrada||item.parcelas.some(p=>p.recebida||p.historicoVencimentos?.length)){alert('Não é possível editar o empréstimo após registrar saída, recebimento ou alteração de vencimento.');return}
  openModal();editEmpId=item.id;type.value=TIPO_EMPRESTIMO;byId('empPessoa').value=item.pessoa;
  value.value=item.value;date.value=item.date;empPrimeira.value=item.primeira;empJuros.value=item.taxa;
  empModo.value=item.modo;empQtd.value=item.qtd;empMensal.value=item.mensal??'';
  modalTitle.textContent='Editar empréstimo';ajustarModoPlanejamento();ajustarModoEmp();byId('empPessoa').focus();
+}
+
+// Datas civis são calculadas em UTC para que mudanças de horário não afetem os dias de atraso.
+function dataValidaEmp(s){
+ if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+ const [a,m,d]=s.split('-').map(Number);
+ if(a<100||a>9999)return false;
+ const dt=new Date(Date.UTC(a,m-1,d));
+ return dt.getUTCFullYear()===a&&dt.getUTCMonth()===m-1&&dt.getUTCDate()===d;
+}
+function hojeLocal(){const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
+function diasEntre(inicio,fim){
+ if(!dataValidaEmp(inicio)||!dataValidaEmp(fim))return 0;
+ const utc=s=>{const [a,m,d]=s.split('-').map(Number);return Date.UTC(a,m-1,d)};
+ return Math.max(0,Math.round((utc(fim)-utc(inicio))/86400000));
+}
+function abrirFormularioParcela(li,parcela,modo,dataEmprestimo,aoSalvar){
+ li.querySelector('.emp-parcela-form')?.remove();
+ const form=document.createElement('form');form.className='emp-parcela-form';
+ const info=document.createElement('p');info.className='emp-form-info';
+ const historico=Array.isArray(parcela.historicoVencimentos)?parcela.historicoVencimentos:[];
+ const original=historico[0]||parcela.data;
+ info.textContent=modo==='recebimento'
+  ?`Vencimento atual: ${fmtDate(parcela.data)}${historico.length?'; original: '+fmtDate(original):''}. O valor recebido corresponde à parcela. Pagamentos parciais não são suportados.`
+  :`Vencimento atual: ${fmtDate(parcela.data)}; original: ${fmtDate(original)}. As demais parcelas não serão alteradas e não serão aplicados juros ou multa adicionais.`;
+ const field=document.createElement('div');field.className='field';
+ const label=document.createElement('label'),input=document.createElement('input');
+ input.type='date';input.id='empDataAcao-'+crypto.randomUUID();input.required=true;
+ input.min=dataEmprestimo;input.max='9999-12-31';
+ input.value=modo==='recebimento'?hojeLocal():parcela.data;
+ label.htmlFor=input.id;label.textContent=modo==='recebimento'?'Data do recebimento *':'Novo vencimento *';
+ field.append(label,input);form.append(info,field);
+ if(modo==='recebimento'){
+  const vfield=document.createElement('div'),vl=document.createElement('label'),v=document.createElement('input');
+  vfield.className='field';v.id='empValorAcao-'+crypto.randomUUID();vl.htmlFor=v.id;vl.textContent='Valor recebido (R$)';
+  v.type='number';v.min='0.01';v.step='0.01';v.required=true;v.value=(parcela.centavos/100).toFixed(2);v.setAttribute('aria-describedby','empAvisoIntegral-'+v.id);
+  const hint=document.createElement('small');hint.id='empAvisoIntegral-'+v.id;hint.textContent='O valor deve corresponder ao total da parcela. Recebimentos parciais ainda não são suportados.';
+  vfield.append(vl,v,hint);form.append(vfield);form.dataset.campoValor=v.id;
+ }
+ const erro=document.createElement('p');erro.className='emp-form-erro';erro.setAttribute('role','alert');erro.hidden=true;form.append(erro);
+ const actions=document.createElement('div');actions.className='emp-form-acoes';
+ const cancelar=document.createElement('button');cancelar.type='button';cancelar.className='btn-light';cancelar.textContent='Cancelar';
+ cancelar.addEventListener('click',()=>{form.remove();li.querySelector('.emp-parcela-acoes button')?.focus()});
+ const salvar=document.createElement('button');salvar.type='submit';salvar.className='btn-primary';salvar.textContent=modo==='recebimento'?'Confirmar recebimento':'Salvar vencimento';
+ actions.append(cancelar,salvar);form.append(actions);
+ form.addEventListener('submit',async e=>{
+  e.preventDefault();erro.hidden=true;
+  if(!dataValidaEmp(input.value)){erro.textContent='Informe uma data válida.';erro.hidden=false;input.focus();return}
+  if(input.value<dataEmprestimo){erro.textContent='A data não pode ser anterior à data do empréstimo.';erro.hidden=false;input.focus();return}
+  if(modo==='recebimento'&&input.value>hojeLocal()){erro.textContent='A data de recebimento não pode ser futura.';erro.hidden=false;input.focus();return}
+  if(modo==='recebimento'){
+   const v=document.getElementById(form.dataset.campoValor);
+   if(!v||!Number.isFinite(Number(v.value))||Math.round(Number(v.value)*100)!==parcela.centavos){erro.textContent='Informe o valor integral da parcela. Pagamentos parciais ainda não são suportados.';erro.hidden=false;v?.focus();return}
+  }
+  if(modo==='vencimento'&&input.value===parcela.data){erro.textContent='Escolha uma data diferente do vencimento atual.';erro.hidden=false;input.focus();return}
+  await aoSalvar(input.value,salvar);
+ });
+ li.append(form);input.focus();
 }
 function renderEmprestimos(){
  const lista=byId('listaEmprestimos');const abertos=new Set([...lista.querySelectorAll('[data-emp-detalhe]:not([hidden])')].map(x=>x.dataset.empDetalhe));lista.replaceChildren();
@@ -770,7 +836,7 @@ function renderEmprestimos(){
   cel('Pessoa',item.pessoa);cel('Valor emprestado',brl(item.value));cel('Total a receber',brl(item.totalCentavos/100));
   const recebidas=item.parcelas.filter(p=>p.recebida), pendentes=item.parcelas.filter(p=>!p.recebida);
   cel('Parcelas',`${recebidas.length}/${item.parcelas.length} recebidas · ${pendentes.length} restantes`);
-  cel('Próximo vencimento',pendentes.length?fmtDate(pendentes[0].data):'Concluído');
+  cel('Próximo vencimento',pendentes.length?fmtDate(pendentes.map(p=>p.data).sort()[0]):'Concluído');
   cel('Juros',`${item.taxa}% ao mês`);
   const acoes=cel('Ações'), grupo=document.createElement('div');grupo.className='plano-acoes';acoes.append(grupo);
   const botao=(nome,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn-light';b.textContent=nome;b.addEventListener('click',fn);grupo.append(b);return b};
@@ -792,59 +858,115 @@ function renderEmprestimos(){
    }catch(err){console.error(err);alert('Não foi possível registrar a saída: '+(err.message||'erro de conexão'))}finally{saida.disabled=false}
   });
   saida.disabled=!!item.saidaRegistrada;
-  const editar=botao('Editar',()=>editarEmprestimo(item));editar.disabled=!!item.saidaRegistrada||recebidas.length>0;
+  const editar=botao('Editar',()=>editarEmprestimo(item));editar.disabled=!!item.saidaRegistrada||recebidas.length>0||item.parcelas.some(p=>p.historicoVencimentos?.length);
   botao('Excluir',async()=>{
    if(!canWrite()||!confirm('Excluir este empréstimo e suas parcelas? A despesa e as receitas já registradas, se houver, permanecerão nos lançamentos.'))return;
    try{await deleteDoc(record(item.id))}catch(e){showError(e)}
   });
   const detailTr=document.createElement('tr');detailTr.id='empDetalhe-'+item.id;detailTr.dataset.empDetalhe=item.id;detailTr.hidden=!abertos.has(item.id);
   const detail=document.createElement('td');detail.colSpan=7;detail.className='emp-detalhes';
-  const p=document.createElement('p');p.textContent=`Juros mensais sobre o valor original: ${brl(item.jurosMensalCentavos/100)}. Use Registrar receita em cada parcela recebida para incluí-la no saldo do mês do vencimento.`;detail.append(p);
+  const p=document.createElement('p');p.textContent=`Juros mensais sobre o valor original: ${brl(item.jurosMensalCentavos/100)}. Use Registrar receita em cada parcela recebida para incluí-la no saldo do mês do recebimento. Parcelas antigas sem data de recebimento mantêm o vencimento como referência.`;detail.append(p);
   const ul=document.createElement('ul');ul.className='emp-parcelas';detail.append(ul);
-  item.parcelas.forEach((parcela,i)=>{
-   const li=document.createElement('li'), texto=document.createElement('span');
-   li.className=parcela.recebida?'emp-recebida':'emp-pendente';texto.className='emp-parcela-texto';
-   texto.textContent=`${parcela.numero}/${item.parcelas.length} · ${fmtDate(parcela.data)} · ${brl(parcela.centavos/100)} · ${parcela.recebida?'Recebida':'Pendente'}`;
-   const bot=document.createElement('button');bot.type='button';bot.className='btn-light';bot.textContent=parcela.recebida?'Desmarcar recebida':'Marcar recebida';
-   bot.addEventListener('click',async()=>{
-    if(!canWrite())return;bot.disabled=true;
-    try{await runTransaction(db,async tx=>{
-     const ref=record(item.id), snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
-     const parcelas=snap.data().parcelas;if(!parcelas[i])throw Error('Parcela não encontrada.');
-     if(!!parcelas[i].recebida!==!!parcela.recebida)throw Error('A situação mudou em outro dispositivo. Atualize e tente novamente.');
-     if(parcelas[i].recebida && parcelas[i].receitaId)throw Error('Esta parcela já possui uma receita registrada e não pode ser desmarcada enquanto o empréstimo existir.');
-     parcelas[i]={...parcelas[i],recebida:!parcela.recebida};tx.update(ref,{parcelas});
-    })}catch(err){console.error(err);alert('Não foi possível alterar a parcela: '+(err.message||'erro de conexão'))}finally{bot.disabled=false}
-   });
-   const acoesParcela=document.createElement('div');acoesParcela.className='emp-parcela-acoes';acoesParcela.append(bot);
-   if(parcela.recebida){
-    const receita=document.createElement('button');receita.type='button';receita.className='btn-light';
-    receita.textContent=parcela.receitaId?'Receita registrada':'Registrar receita';
-    receita.disabled=!!parcela.receitaId;
-    receita.setAttribute('aria-label',`${parcela.receitaId?'Receita registrada':'Registrar receita'} da parcela ${parcela.numero} de ${item.pessoa}`);
-    receita.addEventListener('click',async()=>{
+
+   item.parcelas.forEach((parcela,i)=>{
+    const li=document.createElement('li'), texto=document.createElement('span');
+    li.className=parcela.recebida?'emp-recebida':'emp-pendente';texto.className='emp-parcela-texto';
+    const historico=Array.isArray(parcela.historicoVencimentos)?parcela.historicoVencimentos:[];
+    const dataBase=historico.length?historico[0]:parcela.data;
+    let situacao=parcela.recebida?'Recebida':'Pendente';
+    const recebimento=parcela.dataRecebimento||parcela.data;
+    const atraso=diasEntre(parcela.data,parcela.recebida?recebimento:hojeLocal());
+    if(!parcela.recebida&&atraso>0)situacao=`Em atraso: ${atraso} dia(s)`;
+    let textoDatas=`Vencimento: ${fmtDate(parcela.data)}`;
+    if(historico.length)textoDatas+=` · Original: ${fmtDate(dataBase)} · Anteriores: ${historico.map(fmtDate).join(', ')}`;
+    if(parcela.recebida){
+     textoDatas+=parcela.dataRecebimento?` · Recebida em: ${fmtDate(parcela.dataRecebimento)}`:' · Data do recebimento não informada (usa vencimento como referência)';
+     if(atraso>0&&parcela.dataRecebimento)textoDatas+=` · Atraso: ${atraso} dia(s)`;
+    }
+    texto.textContent=`${parcela.numero}/${item.parcelas.length} · ${textoDatas} · ${brl(parcela.centavos/100)} · ${situacao}`;
+    const acoesParcela=document.createElement('div');acoesParcela.className='emp-parcela-acoes';
+    const bot=document.createElement('button');bot.type='button';bot.className='btn-light';bot.textContent=parcela.recebida?'Desmarcar recebida':'Marcar recebida';
+    bot.setAttribute('aria-label',`${bot.textContent}: parcela ${parcela.numero} de ${item.pessoa}`);
+    bot.disabled=!!(parcela.recebida&&parcela.receitaId);
+    bot.addEventListener('click',async()=>{
      if(!canWrite())return;
-     if(!confirm(`Registrar ${brl(parcela.centavos/100)} como receita na data de vencimento ${fmtDate(parcela.data)}? Confira se você já lançou este recebimento manualmente.`))return;
-     receita.disabled=true;
-     try{
-      await runTransaction(db,async tx=>{
-       const ref=record(item.id),snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
-       const atual=snap.data(),parcelas=atual.parcelas,p=parcelas[i];
-       if(!p||p.numero!==parcela.numero||p.data!==parcela.data||p.centavos!==parcela.centavos)throw Error('A parcela foi alterada. Atualize e tente novamente.');
-       if(!p.recebida)throw Error('Marque a parcela como recebida antes de registrar a receita.');
-       if(p.receitaId)throw Error('Esta parcela já tem uma receita registrada.');
-       const receitaId='emprestimo_receita_'+item.id+'_'+p.numero,refReceita=record(receitaId),existente=await tx.get(refReceita);
-       if(existente.exists())throw Error('Já existe uma receita vinculada a esta parcela.');
-       const nome='Empréstimo concedido: '+atual.pessoa;
-       tx.set(refReceita,{id:receitaId,desc:nome,type:'Receita',value:p.centavos/100,date:p.data,month:p.data.slice(0,7),status:'NA',recurring:false,notes:nome,emprestimoId:item.id,emprestimoParcela:p.numero});
-       parcelas[i]={...p,receitaId};tx.update(ref,{parcelas});
+     if(!parcela.recebida){
+      abrirFormularioParcela(li,parcela,'recebimento',item.date,async(valor,formBotao)=>{
+       if(!canWrite())return;
+       formBotao.disabled=true;
+       try{
+        await runTransaction(db,async tx=>{
+         const ref=record(item.id),snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
+         const parcelas=snap.data().parcelas,p=parcelas[i];
+         if(!p||p.numero!==parcela.numero||p.data!==parcela.data||p.centavos!==parcela.centavos||p.recebida||p.receitaId)throw Error('A parcela mudou em outro dispositivo. Atualize e tente novamente.');
+         parcelas[i]={...p,recebida:true,dataRecebimento:valor};tx.update(ref,{parcelas});
+        });
+       }catch(err){console.error(err);alert('Não foi possível registrar o recebimento: '+(err.message||'erro de conexão'))}finally{formBotao.disabled=false}
       });
-     }catch(err){console.error(err);alert('Não foi possível registrar a receita: '+(err.message||'erro de conexão'))}finally{receita.disabled=false}
+      return;
+     }
+     if(parcela.receitaId){alert('Esta parcela possui uma receita registrada e não pode ser desmarcada.');return}
+     if(!confirm('Desmarcar esta parcela como recebida? A data de recebimento será removida.'))return;
+     bot.disabled=true;
+     try{await runTransaction(db,async tx=>{
+      const ref=record(item.id),snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
+      const parcelas=snap.data().parcelas,p=parcelas[i];
+      if(!p||p.numero!==parcela.numero||!p.recebida||p.receitaId||p.dataRecebimento!==parcela.dataRecebimento)throw Error('A situação mudou em outro dispositivo. Atualize e tente novamente.');
+      const {dataRecebimento,...resto}=p;parcelas[i]={...resto,recebida:false};tx.update(ref,{parcelas});
+     })}catch(err){console.error(err);alert('Não foi possível alterar a parcela: '+(err.message||'erro de conexão'))}finally{bot.disabled=false}
     });
-    acoesParcela.append(receita);
-   }
-   li.append(texto,acoesParcela);ul.append(li);
-  });
+    acoesParcela.append(bot);
+    if(!parcela.recebida){
+     const alterar=document.createElement('button');alterar.type='button';alterar.className='btn-light';alterar.textContent='Alterar vencimento';
+     alterar.setAttribute('aria-label',`Alterar vencimento da parcela ${parcela.numero} de ${item.pessoa}`);
+     alterar.addEventListener('click',()=>{
+      if(!canWrite())return;
+      abrirFormularioParcela(li,parcela,'vencimento',item.date,async(valor,formBotao)=>{
+       if(!canWrite())return;
+       formBotao.disabled=true;
+       try{
+        await runTransaction(db,async tx=>{
+         const ref=record(item.id),snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
+         const parcelas=snap.data().parcelas,p=parcelas[i];
+         if(!p||p.numero!==parcela.numero||p.recebida||p.data!==parcela.data||p.centavos!==parcela.centavos||JSON.stringify(p.historicoVencimentos||[])!==JSON.stringify(parcela.historicoVencimentos||[]))throw Error('A parcela mudou em outro dispositivo. Atualize e tente novamente.');
+         const h=p.historicoVencimentos||[];
+         if(h.length>=100)throw Error('Limite de alterações de vencimento atingido.');
+         parcelas[i]={...p,data:valor,historicoVencimentos:[...h,p.data]};tx.update(ref,{parcelas});
+        });
+       }catch(err){console.error(err);alert('Não foi possível alterar o vencimento: '+(err.message||'erro de conexão'))}finally{formBotao.disabled=false}
+      });
+     });acoesParcela.append(alterar);
+    }
+    if(parcela.recebida){
+     const receita=document.createElement('button');receita.type='button';receita.className='btn-light';
+     receita.textContent=parcela.receitaId?'Receita registrada':'Registrar receita';
+     receita.disabled=!!parcela.receitaId;
+     receita.setAttribute('aria-label',`${parcela.receitaId?'Receita registrada':'Registrar receita'} da parcela ${parcela.numero} de ${item.pessoa}`);
+     receita.addEventListener('click',async()=>{
+      if(!canWrite())return;
+      const dataReceita=parcela.dataRecebimento||parcela.data;
+      const aviso=parcela.dataRecebimento?'na data de recebimento':'na data de vencimento, pois este recebimento antigo não tem data registrada';
+      if(!confirm(`Registrar ${brl(parcela.centavos/100)} como receita ${aviso}: ${fmtDate(dataReceita)}? Confira se você já lançou este recebimento manualmente.`))return;
+      receita.disabled=true;
+      try{
+       await runTransaction(db,async tx=>{
+        const ref=record(item.id),snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
+        const atual=snap.data(),parcelas=atual.parcelas,p=parcelas[i];
+        if(!p||p.numero!==parcela.numero||p.data!==parcela.data||p.centavos!==parcela.centavos||p.dataRecebimento!==parcela.dataRecebimento)throw Error('A parcela foi alterada. Atualize e tente novamente.');
+        if(!p.recebida)throw Error('Marque a parcela como recebida antes de registrar a receita.');
+        if(p.receitaId)throw Error('Esta parcela já tem uma receita registrada.');
+        const receitaId='emprestimo_receita_'+item.id+'_'+p.numero,refReceita=record(receitaId),existente=await tx.get(refReceita);
+        if(existente.exists())throw Error('Já existe uma receita vinculada a esta parcela.');
+        const nome='Empréstimo concedido: '+atual.pessoa, dataEfetiva=p.dataRecebimento||p.data;
+        tx.set(refReceita,{id:receitaId,desc:nome,type:'Receita',value:p.centavos/100,date:dataEfetiva,month:dataEfetiva.slice(0,7),status:'NA',recurring:false,notes:nome,emprestimoId:item.id,emprestimoParcela:p.numero});
+        parcelas[i]={...p,receitaId};tx.update(ref,{parcelas});
+       });
+      }catch(err){console.error(err);alert('Não foi possível registrar a receita: '+(err.message||'erro de conexão'))}finally{receita.disabled=false}
+     });
+     acoesParcela.append(receita);
+    }
+    li.append(texto,acoesParcela);ul.append(li);
+   });
   detailTr.append(detail);lista.append(detailTr);
  }
 }
@@ -979,12 +1101,19 @@ byId('importFile').onchange=async e=>{
     const calc=calcularEmprestimo(Number(x.value),Number(x.taxa),x.modo,x.modo==='quantidade'?Number(x.qtd):Number(x.mensal),x.primeira);
     if(calc.parcelas.length!==x.parcelas.length||calc.total!==x.totalCentavos||calc.jurosMensal!==x.jurosMensalCentavos||x.primeira<x.date)throw Error('Cálculo de empréstimo inválido no backup.');
     const parcelas=calc.parcelas.map((p,i)=>{
-      const original=x.parcelas[i];if(!original||original.numero!==p.numero||original.data!==p.data||original.centavos!==p.centavos||typeof original.recebida!=='boolean')throw Error('Parcela inválida no backup.');
-      if(!original.receitaId)return {...p,recebida:original.recebida};
-      const originalReceita=arr.find(r=>r.id===original.receitaId),novaReceitaId=mapa.get(original.receitaId);
-      if(!original.recebida||!novaReceitaId||!originalReceita||originalReceita.type!=='Receita'||originalReceita.emprestimoId!==x.id||originalReceita.emprestimoParcela!==p.numero||originalReceita.date!==p.data||Math.round(Number(originalReceita.value)*100)!==p.centavos)throw Error('Backup incompleto ou receita vinculada inválida. Nenhum dado foi importado.');
-      return {...p,recebida:true,receitaId:novaReceitaId};
-     });
+       const original=x.parcelas[i];
+       if(!original||original.numero!==p.numero||original.centavos!==p.centavos||typeof original.recebida!=='boolean'||!dataValidaEmp(original.data))throw Error('Parcela inválida no backup.');
+       if(original.receitaId&&!original.recebida)throw Error('Receita vinculada a parcela pendente no backup.');
+       const hist=original.historicoVencimentos;
+       if(hist!==undefined&&(!Array.isArray(hist)||hist.length>100||hist.some(d=>!dataValidaEmp(d))))throw Error('Histórico de vencimentos inválido no backup.');
+       if((hist?.length?hist[0]:original.data)!==p.data)throw Error('Vencimento original inválido no backup.');
+       if(original.dataRecebimento!==undefined&&(!original.recebida||!dataValidaEmp(original.dataRecebimento)))throw Error('Data de recebimento inválida no backup.');
+       const preservada={...p,data:original.data,recebida:original.recebida,...(hist?.length?{historicoVencimentos:hist}:{}),...(original.dataRecebimento?{dataRecebimento:original.dataRecebimento}:{})};
+       if(!original.receitaId)return preservada;
+       const originalReceita=arr.find(r=>r.id===original.receitaId),novaReceitaId=mapa.get(original.receitaId);
+       if(!original.recebida||!novaReceitaId||!originalReceita||originalReceita.type!=='Receita'||originalReceita.emprestimoId!==x.id||originalReceita.emprestimoParcela!==p.numero||originalReceita.date!==(original.dataRecebimento||original.data)||Math.round(Number(originalReceita.value)*100)!==p.centavos)throw Error('Backup incompleto ou receita vinculada inválida. Nenhum dado foi importado.');
+       return {...preservada,receitaId:novaReceitaId};
+      });
     const saidaId=x.saidaId&&mapa.get(x.saidaId);
     if(x.saidaRegistrada&&!saidaId)throw Error('Backup incompleto: saída do empréstimo não encontrada. Nenhum dado foi importado.');
     return {id,desc:x.pessoa,type:TIPO_EMPRESTIMO,value:Number(x.value),date:x.date,month:x.date.slice(0,7),status:'NA',recurring:false,notes:'',pessoa:x.pessoa,taxa:Number(x.taxa),modo:x.modo,primeira:x.primeira,qtd:parcelas.length,mensal:x.modo==='valor'?Number(x.mensal):null,totalCentavos:calc.total,jurosMensalCentavos:calc.jurosMensal,parcelas,...(x.saidaRegistrada?{saidaRegistrada:true,saidaId}:{})};
