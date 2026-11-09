@@ -374,24 +374,14 @@ body{background:var(--bg);color:var(--text)}
 }
 
 
-/* Ajuste das seções: encaixe em meia largura ou largura total. */
+/* Organização das seções. */
 #secoesOrdenaveis{display:flex;flex-wrap:wrap;gap:18px;align-items:stretch}
 #secoesOrdenaveis .secao-movivel{position:relative;display:flex;flex-direction:column;flex:0 0 100%;width:100%;margin:0;min-width:0}
-#secoesOrdenaveis .secao-movivel.meia-largura{flex-basis:calc((100% - 18px)/2);width:calc((100% - 18px)/2)}
 #secoesOrdenaveis .secao-movivel > .panel,
 #secoesOrdenaveis .secao-movivel > #calendarioContas{flex:1;min-width:0}
 #secoesOrdenaveis .secao-movivel .panel-head{flex-wrap:wrap}
 #secoesOrdenaveis .secao-movivel .table-wrap{max-width:100%;overflow-x:auto}
-#secoesOrdenaveis .secao-movivel.meia-largura table{min-width:900px}
 #secoesOrdenaveis .secao-ordenar{padding-right:12px}
-.secao-redimensionar{position:absolute;right:-7px;top:52px;bottom:8px;width:14px;z-index:2;cursor:ew-resize;touch-action:none;display:flex;align-items:center;justify-content:center}
-.secao-redimensionar::after{content:'';width:4px;height:42px;border-radius:4px;background:var(--muted);opacity:.55}
-.secao-redimensionar:hover::after,.secao-redimensionar:focus-visible::after{opacity:1;background:var(--green2)}
-.secao-redimensionar:focus-visible{outline:2px solid var(--green2);outline-offset:2px}
-@media(max-width:900px){
- #secoesOrdenaveis .secao-movivel.meia-largura{flex-basis:100%;width:100%}
- #secoesOrdenaveis .secao-redimensionar{display:none}
-}
 
 </style>
 </head>
@@ -660,7 +650,7 @@ byId('salvarPlano').addEventListener('click',async()=>{
 });
 
 
-// A ordem e as larguras são guardadas apenas neste navegador.
+// A ordem das seções é guardada apenas neste navegador.
 function iniciarOrdenacaoSecoes(){
  if(byId('secoesOrdenaveis')) return;
  const resumo=byId('cartoesResumo');
@@ -677,34 +667,20 @@ function iniciarOrdenacaoSecoes(){
   {id:'lancamentos',nome:'Lançamentos do mês',nodes:[lancamentos]},
   {id:'graficos',nome:'Gráficos',nodes:[alternar,graficos]}
  ];
- const chave='ordem_secoes_financeiras_v1', chaveLargura='largura_secoes_financeiras_v1';
+ const chave='ordem_secoes_financeiras_v1';
  const anunciar=document.createElement('span');anunciar.className='secao-anuncio';
  anunciar.setAttribute('aria-live','polite');area.before(anunciar);
  const salvar=()=>{try{
   localStorage.setItem(chave,JSON.stringify([...area.children].map(el=>el.dataset.secao)));
-  localStorage.setItem(chaveLargura,JSON.stringify(Object.fromEntries([...area.children].map(el=>[el.dataset.secao,el.classList.contains('meia-largura')?50:100]))));
  }catch(e){console.warn('Não foi possível salvar a disposição das seções.',e)}};
  const atualizar=()=>{const lista=[...area.children];lista.forEach((el,i)=>{
   el.querySelector('[data-direcao="anterior"]').disabled=i===0;
   el.querySelector('[data-direcao="proxima"]').disabled=i===lista.length-1;
-  const alca=el.querySelector('.secao-redimensionar'), metade=el.classList.contains('meia-largura');
-  alca.setAttribute('aria-valuenow',metade?'50':'100');
-  alca.setAttribute('aria-valuetext',metade?'Metade da largura':'Largura total');
  })};
  const mover=(el,direcao)=>{const lista=[...area.children],i=lista.indexOf(el),j=i+direcao;
   if(j<0||j>=lista.length)return;
   if(direcao<0)area.insertBefore(el,lista[j]);else area.insertBefore(el,lista[j].nextSibling);
   salvar();atualizar();anunciar.textContent=el.dataset.nome+' movido para a posição '+(j+1)+' de '+lista.length+'.';
- };
- const ajustar=(el,metade)=>{
-  el.classList.toggle('meia-largura',metade);
-  // Ao reduzir, a próxima caixa também é reduzida para encaixar na mesma linha.
-  if(metade){
-   const outra=el.nextElementSibling||el.previousElementSibling;
-   if(outra)outra.classList.add('meia-largura');
-  }
-  salvar();atualizar();
-  anunciar.textContent=el.dataset.nome+(metade?' ajustado para metade da largura.':' ajustado para largura total.');
  };
  secoes.forEach(({id,nome,nodes})=>{
   const bloco=document.createElement('section');bloco.className='secao-movivel';
@@ -714,37 +690,12 @@ function iniciarOrdenacaoSecoes(){
   const proximo=document.createElement('button');proximo.type='button';proximo.className='btn-light';proximo.dataset.direcao='proxima';proximo.textContent='↓';proximo.setAttribute('aria-label','Mover '+nome+' para baixo');
   anterior.addEventListener('click',()=>mover(bloco,-1));proximo.addEventListener('click',()=>mover(bloco,1));
   barra.append(anterior,proximo);bloco.append(barra,...nodes);
-  const borda=document.createElement('div');borda.className='secao-redimensionar';
-  borda.tabIndex=0;borda.setAttribute('role','slider');borda.setAttribute('aria-label','Largura de '+nome);
-  borda.setAttribute('aria-valuemin','50');borda.setAttribute('aria-valuemax','100');borda.setAttribute('aria-orientation','horizontal');
-  borda.title='Arraste para ajustar a largura. Pelo teclado, use as setas esquerda e direita.';
-  let inicio=null;
-  borda.addEventListener('pointerdown',e=>{
-   if(e.button!==0)return;
-   e.preventDefault();inicio={x:e.clientX,largura:bloco.getBoundingClientRect().width};
-   borda.setPointerCapture(e.pointerId);
-  });
-  borda.addEventListener('pointerup',e=>{
-   if(!inicio)return;
-   const desejada=inicio.largura+e.clientX-inicio.x;
-   if(Math.abs(e.clientX-inicio.x)>8) ajustar(bloco,desejada<area.clientWidth*.75);
-   inicio=null;
-  });
-  borda.addEventListener('pointercancel',()=>{inicio=null});
-  borda.addEventListener('keydown',e=>{
-   if(e.key==='ArrowLeft'||e.key==='Home'){e.preventDefault();ajustar(bloco,true)}
-   if(e.key==='ArrowRight'||e.key==='End'){e.preventDefault();ajustar(bloco,false)}
-  });
-  bloco.append(borda);area.append(bloco);
+  area.append(bloco);
  });
  try{
   const ordem=JSON.parse(localStorage.getItem(chave));
   if(Array.isArray(ordem)&&ordem.length===secoes.length&&new Set(ordem).size===secoes.length&&ordem.every(id=>secoes.some(s=>s.id===id)))
    ordem.forEach(id=>area.append([...area.children].find(el=>el.dataset.secao===id)));
-  const larguras=JSON.parse(localStorage.getItem(chaveLargura));
-  if(larguras && typeof larguras==='object') [...area.children].forEach(el=>{
-   if(larguras[el.dataset.secao]===50)el.classList.add('meia-largura');
-  });
  }catch(e){console.warn('Não foi possível restaurar a disposição das seções.',e)}
  atualizar();
 }
