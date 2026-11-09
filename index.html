@@ -795,7 +795,7 @@ function abrirFormularioParcela(li,parcela,modo,dataEmprestimo,aoSalvar){
  const field=document.createElement('div');field.className='field';
  const label=document.createElement('label'),input=document.createElement('input');
  input.type='date';input.id='empDataAcao-'+crypto.randomUUID();input.required=true;
- input.min=dataEmprestimo;input.max='9999-12-31';
+ input.min='0100-01-01';input.max='9999-12-31';
  input.value=modo==='recebimento'?hojeLocal():parcela.data;
  label.htmlFor=input.id;label.textContent=modo==='recebimento'?'Data do recebimento *':'Novo vencimento *';
  field.append(label,input);form.append(info,field);
@@ -805,6 +805,7 @@ function abrirFormularioParcela(li,parcela,modo,dataEmprestimo,aoSalvar){
   v.type='number';v.min='0.01';v.step='0.01';v.required=true;v.value=(parcela.centavos/100).toFixed(2);v.setAttribute('aria-describedby','empAvisoIntegral-'+v.id);
   const hint=document.createElement('small');hint.id='empAvisoIntegral-'+v.id;hint.textContent='O valor deve corresponder ao total da parcela. Recebimentos parciais ainda não são suportados.';
   vfield.append(vl,v,hint);form.append(vfield);form.dataset.campoValor=v.id;
+  const nota=document.createElement('small');nota.className='emp-form-info';nota.textContent='Selecione a data real em que o pagamento foi recebido. Datas futuras exigem confirmação.';form.append(nota);
  }
  const erro=document.createElement('p');erro.className='emp-form-erro';erro.setAttribute('role','alert');erro.hidden=true;form.append(erro);
  const actions=document.createElement('div');actions.className='emp-form-acoes';
@@ -815,13 +816,15 @@ function abrirFormularioParcela(li,parcela,modo,dataEmprestimo,aoSalvar){
  form.addEventListener('submit',async e=>{
   e.preventDefault();erro.hidden=true;
   if(!dataValidaEmp(input.value)){erro.textContent='Informe uma data válida.';erro.hidden=false;input.focus();return}
-  if(input.value<dataEmprestimo){erro.textContent='A data não pode ser anterior à data do empréstimo.';erro.hidden=false;input.focus();return}
-  if(modo==='recebimento'&&input.value>hojeLocal()){erro.textContent='A data de recebimento não pode ser futura.';erro.hidden=false;input.focus();return}
   if(modo==='recebimento'){
    const v=document.getElementById(form.dataset.campoValor);
    if(!v||!Number.isFinite(Number(v.value))||Math.round(Number(v.value)*100)!==parcela.centavos){erro.textContent='Informe o valor integral da parcela. Pagamentos parciais ainda não são suportados.';erro.hidden=false;v?.focus();return}
   }
   if(modo==='vencimento'&&input.value===parcela.data){erro.textContent='Escolha uma data diferente do vencimento atual.';erro.hidden=false;input.focus();return}
+  const avisos=[];
+  if(input.value<dataEmprestimo)avisos.push('A data escolhida é anterior à data cadastrada do empréstimo ('+fmtDate(dataEmprestimo)+').');
+  if(modo==='recebimento'&&input.value>hojeLocal())avisos.push('A data informada é futura; confirmar o recebimento marcará esta parcela como recebida agora.');
+  if(avisos.length&&!confirm(avisos.join('\n')+'\nDeseja continuar?'))return;
   await aoSalvar(input.value,salvar);
  });
  li.append(form);input.focus();
@@ -882,6 +885,7 @@ function renderEmprestimos(){
     if(parcela.recebida){
      textoDatas+=parcela.dataRecebimento?` · Recebida em: ${fmtDate(parcela.dataRecebimento)}`:' · Data do recebimento não informada (usa vencimento como referência)';
      if(atraso>0&&parcela.dataRecebimento)textoDatas+=` · Atraso: ${atraso} dia(s)`;
+     if(parcela.dataRecebimento&&parcela.dataRecebimento<parcela.data)textoDatas+=` · Antecipação: ${diasEntre(parcela.dataRecebimento,parcela.data)} dia(s)`;
     }
     texto.textContent=`${parcela.numero}/${item.parcelas.length} · ${textoDatas} · ${brl(parcela.centavos/100)} · ${situacao}`;
     const acoesParcela=document.createElement('div');acoesParcela.className='emp-parcela-acoes';
