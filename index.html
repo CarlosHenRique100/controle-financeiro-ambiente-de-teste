@@ -392,7 +392,13 @@ body{background:var(--bg);color:var(--text)}
 .emp-detalhes{text-align:left!important}.emp-detalhes p{font-size:13px;color:var(--muted)}
 .emp-parcelas{list-style:none;padding:0;margin:0;display:grid;gap:7px}
 .emp-parcelas li{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:8px;border-bottom:1px solid var(--line)}
-.emp-parcelas button{padding:8px 10px}
+.emp-parcelas button{padding:8px 10px;min-height:40px}
+.emp-parcelas li{border:1px solid;border-radius:8px;padding:10px 12px}
+.emp-parcelas li.emp-pendente{background:#fff1ef;border-color:#edb8b2;color:#922a21}
+.emp-parcelas li.emp-recebida{background:#e9f6ed;border-color:#aad6b6;color:#176038}
+.emp-parcelas .emp-parcela-texto{font-weight:700}
+.emp-parcelas .emp-parcela-acoes{display:flex;flex-wrap:wrap;gap:7px}
+.emp-parcelas .emp-parcela-acoes button:focus-visible{outline:3px solid #286653;outline-offset:2px}
 #mainApp .emprestimos .plano-acoes{display:flex;flex-wrap:wrap;gap:6px}
 .modal .dialog{max-height:calc(100dvh - 32px);overflow-y:auto}
 @media(max-width:700px){
@@ -437,7 +443,7 @@ body{background:var(--bg);color:var(--text)}
     <div class="table-wrap"><table aria-label="Empréstimos a receber"><thead><tr>
       <th>Pessoa</th><th>Valor emprestado</th><th>Total a receber</th><th>Parcelas</th><th>Próximo vencimento</th><th>Juros</th><th>Ações</th>
     </tr></thead><tbody id="listaEmprestimos"></tbody></table></div>
-    <p class="plano-nota">Acompanhe os empréstimos de todos os meses. Registrar a saída é opcional; parcelas recebidas não criam receitas automaticamente.</p>
+    <p class="plano-nota">Acompanhe os empréstimos de todos os meses. Registrar a saída é opcional; marque uma parcela como recebida e use Registrar receita para incluí-la no saldo do mês do vencimento.</p>
   </section>
   <section class="panel planejados" aria-labelledby="planejadosTitulo">
     <div class="panel-head"><h2 id="planejadosTitulo">Gastos planejados</h2></div>
@@ -511,7 +517,7 @@ function render(){
  const items=data.filter(x=>x.month===mk && (!q||(x.desc+x.notes).toLowerCase().includes(q)) && (!tf||x.type===tf) && (!situacao || (situacao==='pendentes' && x.type!=='Receita' && x.status!=='PAGO') || (situacao==='pagas' && x.type!=='Receita' && x.status==='PAGO')));
  const income=data.filter(x=>x.month===mk&&x.type==='Receita').reduce((a,x)=>a+x.value,0), exp=data.filter(x=>x.month===mk&&x.type!=='Receita').reduce((a,x)=>a+x.value,0), paid=data.filter(x=>x.month===mk&&x.status==='PAGO'&&x.type!=='Receita').reduce((a,x)=>a+x.value,0);
  incomeEl.textContent=brl(income); expensesEl.textContent=brl(exp); paidEl.textContent=brl(paid); balanceEl.textContent=brl(income-exp);
- rows.innerHTML=items.length?items.map(x=>`<tr><td><b>${escapeHtml(x.desc)}</b>${x.recurring?'<br><span class="recorrente">↻ recorrente</span>':''}</td><td><span class="pill ${x.type==='Receita'?'receita':x.type==='Lazer'?'lazer':x.type==='Cartão de Crédito'?'cartao':'despesa'}">${escapeHtml(x.type)}</span></td><td class="right"><input class="value-edit valor-formatado ${x.type==='Receita'?'valor-receita':'valor-despesa'}" type="text" inputmode="decimal" value="${escapeHtml(formatarValorLista(x.value,x.type))}" data-id="${escapeHtml(x.id)}" data-valor="${Number(x.value)}" data-tipo="${escapeHtml(x.type)}" aria-label="Alterar valor de ${escapeHtml(x.desc)}"></td><td>${fmtDate(x.date)}</td><td>${x.type==='Receita'?'—':`<select class="status-select ${x.status==='PAGO'?'status-paid':'status-unpaid'}" onchange="changeStatus('${x.id}', this.value)"><option value="NAO_PAGO" ${x.status!=='PAGO'?'selected':''}>NÃO PAGO</option><option value="PAGO" ${x.status==='PAGO'?'selected':''}>PAGO</option></select>`}</td><td>${escapeHtml(x.notes||'')}</td><td><div class="actions"><button class="icon-btn" onclick="edit('${x.id}')" aria-label="Editar">✎</button><button class="icon-btn" onclick="removeItem('${x.id}')" aria-label="Excluir">🗑</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhum lançamento neste mês.</td></tr>';
+ rows.innerHTML=items.length?items.map(x=>`<tr><td><b>${escapeHtml(x.desc)}</b>${x.recurring?'<br><span class="recorrente">↻ recorrente</span>':''}</td><td><span class="pill ${x.type==='Receita'?'receita':x.type==='Lazer'?'lazer':x.type==='Cartão de Crédito'?'cartao':'despesa'}">${escapeHtml(x.type)}</span></td><td class="right"><input class="value-edit valor-formatado ${x.type==='Receita'?'valor-receita':'valor-despesa'}" type="text" inputmode="decimal" value="${escapeHtml(formatarValorLista(x.value,x.type))}" data-id="${escapeHtml(x.id)}" data-valor="${Number(x.value)}" data-tipo="${escapeHtml(x.type)}" aria-label="Alterar valor de ${escapeHtml(x.desc)}"></td><td>${fmtDate(x.date)}</td><td>${x.type==='Receita'?'—':`<select class="status-select ${x.status==='PAGO'?'status-paid':'status-unpaid'}" onchange="changeStatus('${x.id}', this.value)"><option value="NAO_PAGO" ${x.status!=='PAGO'?'selected':''}>NÃO PAGO</option><option value="PAGO" ${x.status==='PAGO'?'selected':''}>PAGO</option></select>`}</td><td>${escapeHtml(x.emprestimoId && /^Saída vinculada ao empréstimo /.test(x.notes||'') ? x.desc : (x.notes||''))}</td><td><div class="actions"><button class="icon-btn" onclick="edit('${x.id}')" aria-label="Editar">✎</button><button class="icon-btn" onclick="removeItem('${x.id}')" aria-label="Excluir">🗑</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhum lançamento neste mês.</td></tr>';
  incomeTrend.textContent=`${data.filter(x=>x.month===mk&&x.type==='Receita').length} lançamento(s)`;
  expenseTrend.textContent=`${data.filter(x=>x.month===mk&&x.type!=='Receita').length} lançamento(s)`;
  paidTrend.textContent=exp?`${Math.round((paid/exp)*100)}% dos gastos · Já incluídas em gastos`:'Nenhuma despesa';
@@ -623,10 +629,10 @@ rows.addEventListener('focusout',e=>{
  if(novo!==original)window.changeValue(campo.dataset.id,novo);
 });
 function openModal(x){editEmpId=null;byId('empPessoa').value='';empPrimeira.value='';empJuros.value='0';empModo.value='quantidade';empQtd.value='1';empMensal.value='';editId=x?.id||null;modalTitle.textContent=editId?'Editar lançamento':'Adicionar lançamento';desc.value=x?.desc||'';type.value=x?.type||'Despesa';value.value=x?.value??'';date.value=x?.date||`${monthKey(current)}-01`;status.value=x?.status||'NAO_PAGO';recurring.value=String(x?.recurring||false);notes.value=x?.notes||'';byId('type').querySelector('option[value="Planejar um gasto"]').disabled=!!editId;byId('type').querySelector('option[value="Empréstimo concedido"]').disabled=!!editId;ultimaSimulacao=null;atualizarSimulacao();ajustarModoPlanejamento();ajustarModoEmp();modal.classList.add('show');desc.focus()}
-window.edit=id=>{const item=data.find(x=>x.id===id);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Esta saída está vinculada a um empréstimo e não pode ser editada enquanto ele existir.');return}if(item)openModal(item)};
-window.changeValue=async(id,val)=>{const item=data.find(x=>x.id===id),v=Number(val);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Esta saída está vinculada a um empréstimo e não pode ser alterada enquanto ele existir.');render();return}if(!item||!Number.isFinite(v)||v<0||v===item.value)return;if(!canWrite()){render();return}try{await updateDoc(record(id),{value:v})}catch(e){showError(e);render()}};
-window.changeStatus=async(id,val)=>{const item=data.find(x=>x.id===id);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Esta saída está vinculada a um empréstimo e não pode ser alterada enquanto ele existir.');render();return}if(!canWrite()){render();return}try{await updateDoc(record(id),{status:val})}catch(e){showError(e);render()}};
-window.removeItem=async id=>{const item=data.find(x=>x.id===id);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Esta saída está vinculada a um empréstimo e não pode ser excluída enquanto ele existir.');return}if(!canWrite()||!confirm('Remover este lançamento?'))return;try{await deleteDoc(record(id))}catch(e){showError(e)}};
+window.edit=id=>{const item=data.find(x=>x.id===id);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Este lançamento está vinculado a um empréstimo e não pode ser editada enquanto ele existir.');return}if(item)openModal(item)};
+window.changeValue=async(id,val)=>{const item=data.find(x=>x.id===id),v=Number(val);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Este lançamento está vinculado a um empréstimo e não pode ser alterada enquanto ele existir.');render();return}if(!item||!Number.isFinite(v)||v<0||v===item.value)return;if(!canWrite()){render();return}try{await updateDoc(record(id),{value:v})}catch(e){showError(e);render()}};
+window.changeStatus=async(id,val)=>{const item=data.find(x=>x.id===id);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Este lançamento está vinculado a um empréstimo e não pode ser alterada enquanto ele existir.');render();return}if(!canWrite()){render();return}try{await updateDoc(record(id),{status:val})}catch(e){showError(e);render()}};
+window.removeItem=async id=>{const item=data.find(x=>x.id===id);if(item?.emprestimoId&&emprestimos.some(e=>e.id===item.emprestimoId)){alert('Este lançamento está vinculado a um empréstimo e não pode ser excluída enquanto ele existir.');return}if(!canWrite()||!confirm('Remover este lançamento?'))return;try{await deleteDoc(record(id))}catch(e){showError(e)}};
 function fecharModal(){editEmpId=null;modal.classList.remove('show');addBtn.focus()}
 addBtn.onclick=()=>openModal();cancel.onclick=fecharModal;
 modal.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();fecharModal()}});
@@ -780,7 +786,7 @@ function renderEmprestimos(){
      const atual=snap.data();if(atual.saidaRegistrada)throw Error('A saída deste empréstimo já foi registrada.');
      const despId='emprestimo_saida_'+item.id, refDesp=record(despId), desp=await tx.get(refDesp);
      if(desp.exists())throw Error('Já existe uma saída vinculada a este empréstimo.');
-     tx.set(refDesp,{id:despId,desc:'Empréstimo concedido: '+atual.pessoa,type:'Despesa',value:atual.value,date:atual.date,month:atual.date.slice(0,7),status:'PAGO',recurring:false,notes:'Saída vinculada ao empréstimo '+item.id,emprestimoId:item.id});
+     tx.set(refDesp,{id:despId,desc:'Empréstimo concedido: '+atual.pessoa,type:'Despesa',value:atual.value,date:atual.date,month:atual.date.slice(0,7),status:'PAGO',recurring:false,notes:'Empréstimo concedido: '+atual.pessoa,emprestimoId:item.id});
      tx.update(ref,{saidaRegistrada:true,saidaId:despId});
     });
    }catch(err){console.error(err);alert('Não foi possível registrar a saída: '+(err.message||'erro de conexão'))}finally{saida.disabled=false}
@@ -788,15 +794,16 @@ function renderEmprestimos(){
   saida.disabled=!!item.saidaRegistrada;
   const editar=botao('Editar',()=>editarEmprestimo(item));editar.disabled=!!item.saidaRegistrada||recebidas.length>0;
   botao('Excluir',async()=>{
-   if(!canWrite()||!confirm('Excluir este empréstimo e suas parcelas? A despesa já registrada, se houver, permanecerá nos lançamentos.'))return;
+   if(!canWrite()||!confirm('Excluir este empréstimo e suas parcelas? A despesa e as receitas já registradas, se houver, permanecerão nos lançamentos.'))return;
    try{await deleteDoc(record(item.id))}catch(e){showError(e)}
   });
   const detailTr=document.createElement('tr');detailTr.id='empDetalhe-'+item.id;detailTr.dataset.empDetalhe=item.id;detailTr.hidden=!abertos.has(item.id);
   const detail=document.createElement('td');detail.colSpan=7;detail.className='emp-detalhes';
-  const p=document.createElement('p');p.textContent=`Juros mensais sobre o valor original: ${brl(item.jurosMensalCentavos/100)}. Parcelas recebidas não geram receita automaticamente.`;detail.append(p);
+  const p=document.createElement('p');p.textContent=`Juros mensais sobre o valor original: ${brl(item.jurosMensalCentavos/100)}. Use Registrar receita em cada parcela recebida para incluí-la no saldo do mês do vencimento.`;detail.append(p);
   const ul=document.createElement('ul');ul.className='emp-parcelas';detail.append(ul);
   item.parcelas.forEach((parcela,i)=>{
    const li=document.createElement('li'), texto=document.createElement('span');
+   li.className=parcela.recebida?'emp-recebida':'emp-pendente';texto.className='emp-parcela-texto';
    texto.textContent=`${parcela.numero}/${item.parcelas.length} · ${fmtDate(parcela.data)} · ${brl(parcela.centavos/100)} · ${parcela.recebida?'Recebida':'Pendente'}`;
    const bot=document.createElement('button');bot.type='button';bot.className='btn-light';bot.textContent=parcela.recebida?'Desmarcar recebida':'Marcar recebida';
    bot.addEventListener('click',async()=>{
@@ -805,9 +812,38 @@ function renderEmprestimos(){
      const ref=record(item.id), snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
      const parcelas=snap.data().parcelas;if(!parcelas[i])throw Error('Parcela não encontrada.');
      if(!!parcelas[i].recebida!==!!parcela.recebida)throw Error('A situação mudou em outro dispositivo. Atualize e tente novamente.');
+     if(parcelas[i].recebida && parcelas[i].receitaId)throw Error('Esta parcela já possui uma receita registrada e não pode ser desmarcada enquanto o empréstimo existir.');
      parcelas[i]={...parcelas[i],recebida:!parcela.recebida};tx.update(ref,{parcelas});
     })}catch(err){console.error(err);alert('Não foi possível alterar a parcela: '+(err.message||'erro de conexão'))}finally{bot.disabled=false}
-   });li.append(texto,bot);ul.append(li);
+   });
+   const acoesParcela=document.createElement('div');acoesParcela.className='emp-parcela-acoes';acoesParcela.append(bot);
+   if(parcela.recebida){
+    const receita=document.createElement('button');receita.type='button';receita.className='btn-light';
+    receita.textContent=parcela.receitaId?'Receita registrada':'Registrar receita';
+    receita.disabled=!!parcela.receitaId;
+    receita.setAttribute('aria-label',`${parcela.receitaId?'Receita registrada':'Registrar receita'} da parcela ${parcela.numero} de ${item.pessoa}`);
+    receita.addEventListener('click',async()=>{
+     if(!canWrite())return;
+     if(!confirm(`Registrar ${brl(parcela.centavos/100)} como receita na data de vencimento ${fmtDate(parcela.data)}? Confira se você já lançou este recebimento manualmente.`))return;
+     receita.disabled=true;
+     try{
+      await runTransaction(db,async tx=>{
+       const ref=record(item.id),snap=await tx.get(ref);if(!snap.exists())throw Error('Empréstimo não encontrado.');
+       const atual=snap.data(),parcelas=atual.parcelas,p=parcelas[i];
+       if(!p||p.numero!==parcela.numero||p.data!==parcela.data||p.centavos!==parcela.centavos)throw Error('A parcela foi alterada. Atualize e tente novamente.');
+       if(!p.recebida)throw Error('Marque a parcela como recebida antes de registrar a receita.');
+       if(p.receitaId)throw Error('Esta parcela já tem uma receita registrada.');
+       const receitaId='emprestimo_receita_'+item.id+'_'+p.numero,refReceita=record(receitaId),existente=await tx.get(refReceita);
+       if(existente.exists())throw Error('Já existe uma receita vinculada a esta parcela.');
+       const nome='Empréstimo concedido: '+atual.pessoa;
+       tx.set(refReceita,{id:receitaId,desc:nome,type:'Receita',value:p.centavos/100,date:p.data,month:p.data.slice(0,7),status:'NA',recurring:false,notes:nome,emprestimoId:item.id,emprestimoParcela:p.numero});
+       parcelas[i]={...p,receitaId};tx.update(ref,{parcelas});
+      });
+     }catch(err){console.error(err);alert('Não foi possível registrar a receita: '+(err.message||'erro de conexão'))}finally{receita.disabled=false}
+    });
+    acoesParcela.append(receita);
+   }
+   li.append(texto,acoesParcela);ul.append(li);
   });
   detailTr.append(detail);lista.append(detailTr);
  }
@@ -942,13 +978,22 @@ byId('importFile').onchange=async e=>{
     if(typeof x.pessoa!=='string'||!x.pessoa.trim()||!Number.isFinite(Number(x.taxa))||!['quantidade','valor'].includes(x.modo)||!Array.isArray(x.parcelas))throw Error('Empréstimo inválido no backup.');
     const calc=calcularEmprestimo(Number(x.value),Number(x.taxa),x.modo,x.modo==='quantidade'?Number(x.qtd):Number(x.mensal),x.primeira);
     if(calc.parcelas.length!==x.parcelas.length||calc.total!==x.totalCentavos||calc.jurosMensal!==x.jurosMensalCentavos||x.primeira<x.date)throw Error('Cálculo de empréstimo inválido no backup.');
-    const parcelas=calc.parcelas.map((p,i)=>{const original=x.parcelas[i];if(!original||original.numero!==p.numero||original.data!==p.data||original.centavos!==p.centavos||typeof original.recebida!=='boolean')throw Error('Parcela inválida no backup.');return {...p,recebida:original.recebida}});
+    const parcelas=calc.parcelas.map((p,i)=>{
+      const original=x.parcelas[i];if(!original||original.numero!==p.numero||original.data!==p.data||original.centavos!==p.centavos||typeof original.recebida!=='boolean')throw Error('Parcela inválida no backup.');
+      if(!original.receitaId)return {...p,recebida:original.recebida};
+      const originalReceita=arr.find(r=>r.id===original.receitaId),novaReceitaId=mapa.get(original.receitaId);
+      if(!original.recebida||!novaReceitaId||!originalReceita||originalReceita.type!=='Receita'||originalReceita.emprestimoId!==x.id||originalReceita.emprestimoParcela!==p.numero||originalReceita.date!==p.data||Math.round(Number(originalReceita.value)*100)!==p.centavos)throw Error('Backup incompleto ou receita vinculada inválida. Nenhum dado foi importado.');
+      return {...p,recebida:true,receitaId:novaReceitaId};
+     });
     const saidaId=x.saidaId&&mapa.get(x.saidaId);
     if(x.saidaRegistrada&&!saidaId)throw Error('Backup incompleto: saída do empréstimo não encontrada. Nenhum dado foi importado.');
     return {id,desc:x.pessoa,type:TIPO_EMPRESTIMO,value:Number(x.value),date:x.date,month:x.date.slice(0,7),status:'NA',recurring:false,notes:'',pessoa:x.pessoa,taxa:Number(x.taxa),modo:x.modo,primeira:x.primeira,qtd:parcelas.length,mensal:x.modo==='valor'?Number(x.mensal):null,totalCentavos:calc.total,jurosMensalCentavos:calc.jurosMensal,parcelas,...(x.saidaRegistrada?{saidaRegistrada:true,saidaId}:{})};
    }
    const item={id,desc:x.desc,type:x.type,value:Number(x.value),date:x.date,status:x.status,recurring:x.recurring===true,notes:typeof x.notes==='string'?x.notes:'',month:x.date.slice(0,7)};
-   if(x.emprestimoId&&mapa.has(x.emprestimoId))item.emprestimoId=mapa.get(x.emprestimoId);
+   if(x.emprestimoId&&mapa.has(x.emprestimoId)){
+     item.emprestimoId=mapa.get(x.emprestimoId);
+     if(Number.isInteger(x.emprestimoParcela))item.emprestimoParcela=x.emprestimoParcela;
+    }
    return item;
   });
   if(!cleaned.length){alert('Arquivo sem registros.');return}
